@@ -1,0 +1,35 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      # HuggingFace 캐시(컨테이너 재시작해도 모델 재다운로드 방지)
+      - HF_HOME=/cache/hf
+      - TRANSFORMERS_CACHE=/cache/hf/transformers
+      - SENTENCE_TRANSFORMERS_HOME=/cache/hf/sentence-transformers
+      # CPU 최적화(요약은 1개 동시 처리 권장)
+      - SUM_MAX_CONCURRENCY=1
+      - CACHE_TTL_SEC=1800
+      - CACHE_MAX_ITEMS=256
+    volumes:
+      - hf-cache:/cache
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: client/Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      # 브라우저에서 접근 가능한 API 주소(호스트 포트로 호출)
+      - API_BASE=http://localhost:8000
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  hf-cache:

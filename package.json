@@ -1,0 +1,14 @@
+{
+  "name": "korean-meeting-minutes-summarizer",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": ["client"],
+  "scripts": {
+    "dev": "docker compose up --build",
+    "down": "docker compose down -v",
+    "start:server": "cd server && uvicorn app:app --host 127.0.0.1 --port 8000",
+    "start:client:summarize": "cd client && npm run summarize:sample",
+    "start:client:report": "cd client && npm run report:sample",
+    "report:sample": "cd client && npm run report:sample"
+  }
+}
