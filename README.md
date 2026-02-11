@@ -1,196 +1,136 @@
-# korean-meeting-minutes-summarizer
+# AI Meeting Summarizer (KR)
 
-로컬 **CPU-only** 환경에서 한국어 **회의록 문서 요약(긴 문서 포함)** 을 수행하는 예제 레포입니다.
+브라우저에서 **회의를 녹음**하고, 서버에서 **mp3로 저장 + STT 전사 + 회의록 리포트 생성**까지 한 번에 처리하는 실무형 예제입니다.
 
-- **Python(FastAPI) 추론 서버**: Hugging Face 모델로 요약/분류/임베딩 API 제공
-- **Node.js(CommonJS) 클라이언트**: 서버 호출 예제(요약/분류/임베딩)
-
-> 권장 사용: 회의록(긴 문서) 요약은 CPU에서 느릴 수 있으므로, 본 레포는 **청크(Map) → 요약(Reduce)** 방식으로 긴 문서를 처리합니다.
-
----
-
-## 1) 요구 사항
-
-- Python 3.10+ (권장)
-- Node.js 18+ (권장: 내장 `fetch` 사용)
+- **FE (Node + Static Web UI)**
+  - 브라우저 `MediaRecorder` 기반 녹음
+  - 오디오 업로드/녹음 데이터 전송
+  - 전사 결과 + 마크다운 리포트 + 구조화 JSON 확인
+- **BE (FastAPI)**
+  - 오디오 → mp3 변환(`ffmpeg`)
+  - OpenAI 음성 전사(`gpt-4o-mini-transcribe` 기본)
+  - 기존 AI 파이프라인(요약/추출/리포트) 연동
 
 ---
 
-## 2) 빠른 시작
+## 1. 아키텍처
 
-### 2-1. Python 서버 실행
+1) FE에서 녹음(webm) 또는 오디오 파일 업로드  
+2) `POST /transcribe-and-report`로 전송  
+3) BE에서 mp3 변환 후 서버 디렉터리에 저장  
+4) OpenAI STT로 텍스트 전사  
+5) 기존 `/report` 파이프라인으로 요약 + 의사결정/액션아이템 추출  
+6) FE에서 결과 표시 및 mp3 다운로드 링크 제공
+
+---
+
+## 2. 요구사항
+
+- Python 3.10+
+- Node.js 18+
+- `ffmpeg` (서버 오디오 변환용)
+- `OPENAI_API_KEY` 환경 변수
+
+---
+
+## 3. 빠른 시작
+
+### 3.1 서버 실행
 
 ```bash
-sudo apt update
-sudo apt install -y python3-venv
 python3 -m venv .venv
-```
-
-```bash
-cd server
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r server/requirements.txt
 
-# (선택) 모델 교체
-# export SUM_MODEL_ID=gogamza/kobart-summarization
+export OPENAI_API_KEY="sk-..."
+# 선택값
+# export TRANSCRIBE_MODEL="gpt-4o-mini-transcribe"
+# export TRANSCRIBE_LANGUAGE="ko"
+# export MP3_OUTPUT_DIR="/tmp/ai_meeting_audio"
 
-uvicorn app:app --host 127.0.0.1 --port 8000
+uvicorn server.app:app --host 0.0.0.0 --port 8000
 ```
 
-#### whl은 파이썬 패키지 배포 파일 형식인 “Wheel(휠)” 확장자예요. 쉽게 말해:
-#### something-1.2.3-py3-none-any.whl 같은 파일은 미리 빌드(패키징)된 설치 파일
-
----
-
-### Version Down - 4.49.0 에 맞춤
-```
-cd /home/AI-Meeting-Summarizer/server
-source .venv/bin/activate
-
-pip uninstall -y transformers
-pip install "transformers==4.49.0" --upgrade
-```
----
-```
-python3 -c "import transformers; print(transformers.__version__)"
-```
----
-
-
-
-
-서버가 뜨면:
-- 헬스체크: http://127.0.0.1:8000/health
-- API 문서(Swagger): http://127.0.0.1:8000/docs
-
-### 2-2. Node.js 클라이언트 실행
+### 3.2 웹 UI 실행
 
 ```bash
 cd client
-npm i
-
-# 샘플 회의록을 요약
-npm run summarize:sample
-
-# 분류(옵션)
-npm run classify:sample
-
-# 임베딩(옵션)
-npm run embed:sample
+npm install
+API_BASE=http://localhost:8000 npm start
 ```
 
-```
-curl -s -X POST "http://127.0.0.1:8000/report" \
-  -H "Content-Type: application/json" \
-  -d '{"text":"김도영: 그럼 성능 개선 제가 하겠습니다. 차주 수요일까지요.\n홍길동: 이슈는 CPU에서 요약이 느린 점입니다.\n이순신: 다음주 금요일에 임베딩 검색 논의하죠.","meeting_title":"주간 개발 회의","meeting_date_hint":"2026-02-08","include_summary":true}' | jq -r .markdown
-```
----
-```
-cd /home/AI-Meeting-Summarizer/client
-npm install axios
-node scripts/report_to_md.js
-```
----
-```
-root@DESKTOP-D6A344Q:/home/AI-Meeting-Summarizer# npm run report:sample
-
-> korean-meeting-minutes-summarizer@1.0.0 report:sample
-> cd client && npm run report:sample
-
-
-> meeting-minutes-client@1.0.0 report:sample
-> node scripts/report_to_md.js
-
-Saved: /home/AI-Meeting-Summarizer/client/scripts/meeting_report.md
-```
-
-### Docker 기반으로
-```
-# 1) 필요 패키지
-sudo apt-get update
-sudo apt-get install -y ca-certificates curl gnupg lsb-release
-
-# 2) Docker 공식 GPG 키 등록
-sudo install -m 0755 -d /etc/apt/keyrings
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
-  | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-sudo chmod a+r /etc/apt/keyrings/docker.gpg
-
-# 3) Docker 공식 저장소 추가 (Ubuntu codename 자동)
-echo \
-  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
-  https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" \
-  | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-
-# 4) compose plugin 설치
-sudo apt-get update
-sudo apt-get install -y docker-compose-plugin
-
-```
----
-```
-docker compose version
-```
----
-```
-# 멈춘 컨테이너/네트워크 정리
-docker compose down
-
-# 혹시 “남아있는 실패 컨테이너”까지 강제로 청소
-docker rm -f ai-meeting-summarizer-api-1 ai-meeting-summarizer-web-1 2>/dev/null || true
-
-# 다시 실행
-docker compose up --build
-```
-
----
-```
-sudo ss -ltnp | egrep ':8000|:3000'
-docker ps -a --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
-```
-
-### 웹 확인
-- FE: http://localhost:3000
-- API: http://localhost:8000/health
+- Web: http://localhost:3000
+- API docs: http://localhost:8000/docs
 
 ---
 
-## 3) 긴 문서 요약 방식(중요)
+## 4. 핵심 API
 
-회의록처럼 긴 문서는 모델 입력 길이를 초과하기 때문에:
+### 4.1 `POST /transcribe-and-report` (신규)
 
-1. 문서를 문단/줄 단위로 쪼갠 뒤
-2. 토큰 길이 기준으로 청크를 구성(Map)
-3. 각 청크를 요약하고
-4. 청크 요약들을 다시 한번 요약(Reduce)
+`multipart/form-data`로 오디오를 업로드해 전사 + 리포트를 한 번에 받습니다.
 
-을 수행합니다.
+필드:
+- `audio` (필수): 업로드 파일
+- `meeting_title` (선택)
+- `meeting_date_hint` (선택, `YYYY-MM-DD`)
+- `include_summary` (선택, `true/false`)
+- `language` (선택, 기본 `ko`)
 
-`POST /summarize` 는 아래 응답을 제공합니다:
-- `chunk_summaries`: 청크별 요약
-- `final_summary`: 최종 요약(1~2차 요약 결과)
+응답:
+- `transcript`: 전사 텍스트
+- `markdown`: 정리 회의록
+- `extracted`: 구조화 결과(JSON)
+- `mp3_download_url`, `mp3_file_name`: 서버 저장 mp3 접근 정보
+
+예시:
+
+```bash
+curl -X POST "http://localhost:8000/transcribe-and-report" \
+  -F "audio=@./sample.webm" \
+  -F "meeting_title=주간 개발 회의" \
+  -F "meeting_date_hint=2026-02-08" \
+  -F "include_summary=true"
+```
+
+### 4.2 `GET /audio/{file_name}` (신규)
+
+서버에 저장된 mp3를 다운로드합니다.
 
 ---
 
-## 4) 환경 변수
+## 5. 환경 변수
 
-서버(`server/.env.example` 참고):
-- `SUM_MODEL_ID` (기본: `gogamza/kobart-summarization`)
-- `CLS_MODEL_ID` (기본: `Seonghaa/korean-emotion-classifier-roberta`)
-- `EMB_MODEL_ID` (기본: `upskyy/bge-m3-korean`)
+### 기존 NLP
+- `SUM_MODEL_ID` (기본 `gogamza/kobart-summarization`)
+- `CLS_MODEL_ID` (기본 `Seonghaa/korean-emotion-classifier-roberta`)
+- `EMB_MODEL_ID` (기본 `upskyy/bge-m3-korean`)
+- `CHUNK_MAX_TOKENS`, `REDUCE_MAX_TOKENS`
 
-추가 튜닝:
-- `CHUNK_MAX_TOKENS` (기본 900)
-- `REDUCE_MAX_TOKENS` (기본 1100)
-
----
-
-## 5) 샘플
-
-`samples/meeting_minutes_ko.txt` 를 수정해서 본인 회의록을 넣고 테스트하세요.
+### 신규 음성 파이프라인
+- `OPENAI_API_KEY` (필수)
+- `TRANSCRIBE_MODEL` (기본 `gpt-4o-mini-transcribe`)
+- `TRANSCRIBE_LANGUAGE` (기본 `ko`)
+- `MP3_OUTPUT_DIR` (기본 `/tmp/ai_meeting_audio`)
 
 ---
 
-## 6) 라이선스
+## 6. 운영 팁 (실무)
 
-MIT (원하면 변경하세요)
+- mp3 저장소(`MP3_OUTPUT_DIR`)를 영속 볼륨으로 마운트하세요.
+- 파일 보관 정책(예: 7일 후 삭제) 배치 작업을 추가하세요.
+- CORS 허용 도메인을 운영 도메인으로 제한하세요.
+- STT 비용 관리를 위해 파일 길이 제한 및 요청 인증(JWT/API Key)을 붙이세요.
+
+---
+
+## 7. 레거시 기능
+
+기존 텍스트 기반 엔드포인트도 그대로 사용 가능합니다.
+
+- `POST /summarize`
+- `POST /extract`
+- `POST /report`
+- `POST /classify`
+- `POST /embed`
+

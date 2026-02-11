@@ -4,13 +4,20 @@ import time
 import json
 import hashlib
 import asyncio
+import shutil
+import subprocess
+import tempfile
+import uuid
 from dataclasses import dataclass
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime, date, timedelta
+from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
+from fastapi.responses import FileResponse
+from openai import OpenAI
 
 from transformers import pipeline, AutoTokenizer
 from sentence_transformers import SentenceTransformer
@@ -48,6 +55,10 @@ CLS_MAX_CONCURRENCY = int(os.getenv("CLS_MAX_CONCURRENCY", "2"))
 CACHE_TTL_SEC = int(os.getenv("CACHE_TTL_SEC", "1800"))  # 30분
 CACHE_MAX_ITEMS = int(os.getenv("CACHE_MAX_ITEMS", "256"))
 
+TRANSCRIBE_MODEL = os.getenv("TRANSCRIBE_MODEL", "gpt-4o-mini-transcribe")
+TRANSCRIBE_LANGUAGE = os.getenv("TRANSCRIBE_LANGUAGE", "ko")
+MP3_OUTPUT_DIR = Path(os.getenv("MP3_OUTPUT_DIR", "/tmp/ai_meeting_audio"))
+
 # -----------------------------
 # App
 # -----------------------------
@@ -69,6 +80,7 @@ summarizer = None
 sum_tokenizer = None
 classifier = None
 embedder = None
+openai_client: Optional[OpenAI] = None
 
 sum_sem = asyncio.Semaphore(SUM_MAX_CONCURRENCY)
 emb_sem = asyncio.Semaphore(EMB_MAX_CONCURRENCY)
@@ -210,6 +222,15 @@ class ReportOut(BaseModel):
     extracted: ExtractOut
 
 
+class TranscribeReportOut(BaseModel):
+    transcript: str
+    markdown: str
+    extracted: ExtractOut
+    mp3_download_url: str
+    mp3_file_name: str
+    meta: Dict[str, Any]
+
+
 class ClassifyIn(BaseModel):
     text: str
 
@@ -234,6 +255,7 @@ def _startup():
     sum_tokenizer = AutoTokenizer.from_pretrained(SUM_MODEL_ID)
     classifier = pipeline("text-classification", model=CLS_MODEL_ID, device=-1)
     embedder = SentenceTransformer(EMB_MODEL_ID, device="cpu")
+    MP3_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # -----------------------------
@@ -242,6 +264,63 @@ def _startup():
 def _sha_key(*parts: Any) -> str:
     raw = json.dumps(parts, ensure_ascii=False, sort_keys=True).encode("utf-8")
     return hashlib.sha256(raw).hexdigest()
+
+
+def _get_openai_client() -> OpenAI:
+    global openai_client
+    if openai_client is not None:
+        return openai_client
+
+    api_key = os.getenv("OPENAI_API_KEY", "").strip()
+    if not api_key:
+        raise HTTPException(status_code=500, detail="OPENAI_API_KEY is not configured.")
+
+    openai_client = OpenAI(api_key=api_key)
+    return openai_client
+
+
+def _convert_audio_to_mp3(input_path: str, output_path: str):
+    ffmpeg_bin = shutil.which("ffmpeg")
+    if not ffmpeg_bin:
+        raise HTTPException(status_code=500, detail="ffmpeg is not installed on server.")
+
+    cmd = [
+        ffmpeg_bin,
+        "-y",
+        "-i",
+        input_path,
+        "-vn",
+        "-ac",
+        "1",
+        "-ar",
+        "16000",
+        "-codec:a",
+        "libmp3lame",
+        "-b:a",
+        "128k",
+        output_path,
+    ]
+
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Audio conversion failed: {result.stderr[-500:]}",
+        )
+
+
+def _transcribe_mp3(mp3_path: str, language: str) -> str:
+    client = _get_openai_client()
+    with open(mp3_path, "rb") as fp:
+        text = client.audio.transcriptions.create(
+            model=TRANSCRIBE_MODEL,
+            file=fp,
+            language=language or TRANSCRIBE_LANGUAGE,
+            response_format="text",
+        )
+    if isinstance(text, str):
+        return text.strip()
+    return str(text).strip()
 
 
 def _normalize_text(text: str, normalize_whitespace: bool, collapse_repeats: bool, max_repeat: int) -> str:
@@ -897,6 +976,69 @@ async def report(req: ReportIn):
 
     md = _markdown_report(req.meeting_title or "회의록", extracted, summary)
     return ReportOut(markdown=md, extracted=extracted)
+
+
+@app.get("/audio/{file_name}")
+def download_audio(file_name: str):
+    safe_name = Path(file_name).name
+    file_path = MP3_OUTPUT_DIR / safe_name
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Audio file not found")
+    return FileResponse(path=str(file_path), media_type="audio/mpeg", filename=safe_name)
+
+
+@app.post("/transcribe-and-report", response_model=TranscribeReportOut)
+async def transcribe_and_report(
+    audio: UploadFile = File(...),
+    meeting_title: str = Form("회의록"),
+    meeting_date_hint: str = Form(""),
+    include_summary: str = Form("true"),
+    language: str = Form(TRANSCRIBE_LANGUAGE),
+):
+    ext = Path(audio.filename or "input").suffix or ".webm"
+    req_id = uuid.uuid4().hex
+    output_name = f"meeting-{req_id}.mp3"
+    output_path = MP3_OUTPUT_DIR / output_name
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as temp_input:
+        temp_bytes = await audio.read()
+        if not temp_bytes:
+            raise HTTPException(status_code=400, detail="audio file is empty")
+        temp_input.write(temp_bytes)
+        temp_input_path = temp_input.name
+
+    try:
+        await asyncio.to_thread(_convert_audio_to_mp3, temp_input_path, str(output_path))
+        transcript = await asyncio.to_thread(_transcribe_mp3, str(output_path), language)
+        if not transcript.strip():
+            raise HTTPException(status_code=400, detail="transcript is empty")
+
+        use_summary = include_summary.strip().lower() in {"1", "true", "yes", "on"}
+        report = await report(
+            ReportIn(
+                text=transcript,
+                meeting_title=meeting_title or "회의록",
+                meeting_date_hint=meeting_date_hint or None,
+                include_summary=use_summary,
+            )
+        )
+
+        return TranscribeReportOut(
+            transcript=transcript,
+            markdown=report.markdown,
+            extracted=report.extracted,
+            mp3_download_url=f"/audio/{output_name}",
+            mp3_file_name=output_name,
+            meta={
+                "transcribe_model": TRANSCRIBE_MODEL,
+                "language": language or TRANSCRIBE_LANGUAGE,
+            },
+        )
+    finally:
+        try:
+            os.remove(temp_input_path)
+        except OSError:
+            pass
 
 
 @app.post("/classify")
