@@ -986,7 +986,6 @@ def download_audio(file_name: str):
         raise HTTPException(status_code=404, detail="Audio file not found")
     return FileResponse(path=str(file_path), media_type="audio/mpeg", filename=safe_name)
 
-
 @app.post("/transcribe-and-report", response_model=TranscribeReportOut)
 async def transcribe_and_report(
     audio: UploadFile = File(...),
@@ -1014,7 +1013,9 @@ async def transcribe_and_report(
             raise HTTPException(status_code=400, detail="transcript is empty")
 
         use_summary = include_summary.strip().lower() in {"1", "true", "yes", "on"}
-        report = await report(
+
+        # ✅ report 변수명은 절대 쓰지 말고, 결과는 report_out로만 받기
+        report_out = await report(
             ReportIn(
                 text=transcript,
                 meeting_title=meeting_title or "회의록",
@@ -1025,8 +1026,8 @@ async def transcribe_and_report(
 
         return TranscribeReportOut(
             transcript=transcript,
-            markdown=report.markdown,
-            extracted=report.extracted,
+            markdown=report_out.markdown,
+            extracted=report_out.extracted,
             mp3_download_url=f"/audio/{output_name}",
             mp3_file_name=output_name,
             meta={
@@ -1039,7 +1040,6 @@ async def transcribe_and_report(
             os.remove(temp_input_path)
         except OSError:
             pass
-
 
 @app.post("/classify")
 async def classify(req: ClassifyIn):

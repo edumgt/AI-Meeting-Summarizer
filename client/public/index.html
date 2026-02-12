@@ -5,11 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>회의 녹음/전사/정리</title>
   <style>
-    body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; color:#111827; }
-    header { padding:12px 16px; border-bottom:1px solid #e5e7eb; display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+    body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; color:#111827; background:#fff; }
+    header { padding:12px 16px; border-bottom:1px solid #e5e7eb; display:flex; gap:12px; align-items:center; flex-wrap:wrap; position:sticky; top:0; background:#fff; z-index:20; }
     .btn { padding:10px 12px; border:1px solid #d1d5db; background:#fff; border-radius:10px; cursor:pointer; }
     .btn.primary { background:#111827; color:#fff; border-color:#111827; }
     .btn:disabled { opacity:.5; cursor:not-allowed; }
+
     .wrap { display:grid; grid-template-columns: 1fr 1fr; min-height: calc(100vh - 56px); }
     .pane { padding:12px; overflow:auto; }
     .pane + .pane { border-left:1px solid #e5e7eb; }
@@ -23,15 +24,135 @@
     pre { padding:12px; overflow:auto; white-space: pre-wrap; }
     .muted { color:#6b7280; font-size:12px; }
     #recordTime { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 700; }
+
+    /* Offcanvas (GNB) */
+    .gnb-left { display:flex; align-items:center; gap:10px; min-width: 220px; }
+    .gnb-title { font-weight: 800; letter-spacing: -0.02em; }
+    .gnb-right { margin-left:auto; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+
+    .iconbtn {
+      width:42px; height:42px;
+      display:inline-flex; align-items:center; justify-content:center;
+      border:1px solid #d1d5db; background:#fff; border-radius:12px;
+      cursor:pointer;
+    }
+    .iconbtn:active { transform: translateY(1px); }
+
+    .offcanvas-backdrop {
+      position: fixed; inset: 0;
+      background: rgba(17,24,39,.45);
+      opacity: 0; pointer-events: none;
+      transition: opacity .2s ease;
+      z-index: 40;
+    }
+
+    .offcanvas {
+      position: fixed; top: 0; left: 0; height: 100vh; width: min(86vw, 360px);
+      background: #fff;
+      border-right: 1px solid #e5e7eb;
+      transform: translateX(-102%);
+      transition: transform .22s ease;
+      z-index: 50;
+      display:flex; flex-direction:column;
+    }
+
+    .offcanvas.open { transform: translateX(0); }
+    .offcanvas-backdrop.open { opacity: 1; pointer-events: auto; }
+
+    .offcanvas-header {
+      padding: 14px 14px;
+      border-bottom: 1px solid #e5e7eb;
+      display:flex; align-items:center; justify-content:space-between; gap:10px;
+    }
+    .offcanvas-header .brand { display:flex; flex-direction:column; line-height:1.1; }
+    .offcanvas-header .brand strong { font-size: 14px; }
+    .offcanvas-header .brand span { font-size: 12px; color:#6b7280; }
+
+    .offcanvas-body { padding: 12px; display:flex; flex-direction:column; gap:10px; overflow:auto; }
+    .offcanvas-body .menu-title { font-size: 12px; color:#6b7280; margin-top:6px; }
+
+    .menu-btn { width:100%; text-align:left; display:flex; justify-content:space-between; align-items:center; gap:10px; }
+
+    .offcanvas-footer {
+      margin-top:auto;
+      padding: 14px;
+      border-top: 1px solid #e5e7eb;
+    }
+    .logo-box {
+      display:flex; align-items:center; justify-content:center;
+      height: 52px;
+      border: 1px dashed #d1d5db;
+      border-radius: 14px;
+      font-weight: 900;
+      letter-spacing: .14em;
+      color:#111827;
+      user-select:none;
+    }
+    .logo-hint { text-align:center; margin-top:8px; font-size: 12px; color:#6b7280; }
+
+    @media (max-width: 980px) {
+      .wrap { grid-template-columns: 1fr; }
+      .pane + .pane { border-left: none; border-top:1px solid #e5e7eb; }
+    }
   </style>
 </head>
 <body>
+  <div id="ocBackdrop" class="offcanvas-backdrop" aria-hidden="true"></div>
+
+  <aside id="offcanvas" class="offcanvas" aria-hidden="true" aria-label="GNB 메뉴">
+    <div class="offcanvas-header">
+      <div class="brand">
+        <strong>회의 녹음/전사/정리</strong>
+        <span>EDUMGT 내부 도구</span>
+      </div>
+      <button id="btnMenuClose" class="iconbtn" aria-label="메뉴 닫기" title="닫기">✕</button>
+    </div>
+
+    <div class="offcanvas-body">
+      <div class="menu-title">메뉴</div>
+
+      <!-- 기존 버튼 ID 유지: main.js 수정 없이 동작 -->
+      <button id="btnTranscribe" class="btn primary menu-btn">
+        <span>녹음/오디오로 보고서 생성</span>
+        <small class="muted">POST /transcribe-and-report</small>
+      </button>
+
+      <button id="btnReport" class="btn menu-btn">
+        <span>텍스트로 보고서 생성</span>
+        <small class="muted">POST /report</small>
+      </button>
+
+      <button id="btnClear" class="btn menu-btn">
+        <span>초기화</span>
+        <small class="muted">Reset UI</small>
+      </button>
+
+      <div class="card" style="margin-top:10px;">
+        <div class="muted">API</div>
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:6px;">
+          <span class="muted">Base:</span>
+          <code id="apiBase">(loading)</code>
+        </div>
+        <div id="status" class="muted" style="margin-top:8px;"></div>
+      </div>
+    </div>
+
+    <div class="offcanvas-footer">
+      <div class="logo-box" aria-label="EDUMGT 로고">EDUMGT</div>
+      <div class="logo-hint">© EDUMGT</div>
+    </div>
+  </aside>
+
   <header>
-    <button id="btnTranscribe" class="btn primary">녹음/오디오로 보고서 생성</button>
-    <button id="btnReport" class="btn">텍스트로 보고서 생성</button>
-    <button id="btnClear" class="btn">초기화</button>
-    <span class="muted">API: <span id="apiBase"></span></span>
-    <span id="status" class="muted"></span>
+    <div class="gnb-left">
+      <button id="btnMenu" class="iconbtn" aria-label="메뉴 열기" title="메뉴">☰</button>
+      <div class="gnb-title">회의 녹음/전사/정리</div>
+    </div>
+
+    <div class="gnb-right">
+      <span class="muted">API: <span id="apiBaseTop"></span></span>
+      <span id="statusTop" class="muted"></span>
+    </div>
   </header>
 
   <div class="wrap">
@@ -45,7 +166,7 @@
           <input id="audioFile" type="file" accept="audio/*" style="display:none;" />
         </div>
         <p class="muted">녹음 시간: <span id="recordTime">00:00</span></p>
-        <p id="recordInfo" class="muted">브라우저 녹음 또는 파일 업로드 후 "녹음/오디오로 보고서 생성" 버튼을 누르세요.</p>
+        <p id="recordInfo" class="muted">녹음 또는 파일 업로드 후 좌측 메뉴에서 "녹음/오디오로 보고서 생성"을 누르세요.</p>
         <div id="audioDownload" class="muted"></div>
       </div>
 
@@ -75,6 +196,57 @@
       </div>
     </div>
   </div>
+
+  <script>
+    (function () {
+      const oc = document.getElementById("offcanvas");
+      const bd = document.getElementById("ocBackdrop");
+      const openBtn = document.getElementById("btnMenu");
+      const closeBtn = document.getElementById("btnMenuClose");
+
+      function open() {
+        oc.classList.add("open");
+        bd.classList.add("open");
+        oc.setAttribute("aria-hidden", "false");
+        bd.setAttribute("aria-hidden", "false");
+      }
+      function close() {
+        oc.classList.remove("open");
+        bd.classList.remove("open");
+        oc.setAttribute("aria-hidden", "true");
+        bd.setAttribute("aria-hidden", "true");
+      }
+
+      openBtn?.addEventListener("click", open);
+      closeBtn?.addEventListener("click", close);
+      bd?.addEventListener("click", close);
+      window.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") close();
+      });
+
+      // 메뉴에서 클릭하면 닫기
+      ["btnTranscribe", "btnReport", "btnClear"].forEach((id) => {
+        const el = document.getElementById(id);
+        el?.addEventListener("click", () => setTimeout(close, 0));
+      });
+
+      // 상단 헤더 표시 동기화(기존 main.js 그대로 사용)
+      const apiBase = document.getElementById("apiBase");
+      const status = document.getElementById("status");
+      const apiBaseTop = document.getElementById("apiBaseTop");
+      const statusTop = document.getElementById("statusTop");
+
+      const sync = () => {
+        if (apiBaseTop && apiBase) apiBaseTop.textContent = apiBase.textContent || "";
+        if (statusTop && status) statusTop.textContent = status.textContent || "";
+      };
+
+      const mo = new MutationObserver(sync);
+      if (apiBase) mo.observe(apiBase, { childList: true, subtree: true, characterData: true });
+      if (status) mo.observe(status, { childList: true, subtree: true, characterData: true });
+      sync();
+    })();
+  </script>
 
   <script src="/config.js"></script>
   <script type="module" src="/main.js"></script>

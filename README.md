@@ -12,6 +12,13 @@
   - 기존 AI 파이프라인(요약/추출/리포트) 연동
 
 ---
+```
+Error: HTTP 500: {"detail":"ffmpeg is not installed on server."}
+```
+```
+sudo apt update
+sudo apt install -y ffmpeg
+```
 
 ## 1. 아키텍처
 
@@ -42,11 +49,10 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r server/requirements.txt
 
-export OPENAI_API_KEY="sk-..."
-# 선택값
-# export TRANSCRIBE_MODEL="gpt-4o-mini-transcribe"
-# export TRANSCRIBE_LANGUAGE="ko"
-# export MP3_OUTPUT_DIR="/tmp/ai_meeting_audio"
+export OPENAI_API_KEY=""
+export TRANSCRIBE_MODEL="gpt-4o-mini-transcribe"
+export TRANSCRIBE_LANGUAGE="ko"
+export MP3_OUTPUT_DIR="/tmp/ai_meeting_audio"
 
 uvicorn server.app:app --host 0.0.0.0 --port 8000
 ```
