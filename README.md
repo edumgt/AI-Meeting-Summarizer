@@ -1,5 +1,5 @@
 # AI Meeting Summarizer (KR)
-
+ 
 브라우저에서 **회의를 녹음**하고, 서버에서 **mp3로 저장 + STT 전사 + 회의록 리포트 생성**까지 한 번에 처리하는 실무형 예제입니다.
 
 - **FE (Node + Static Web UI)**
