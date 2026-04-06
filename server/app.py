@@ -24,6 +24,14 @@ from sentence_transformers import SentenceTransformer
 
 from fastapi.middleware.cors import CORSMiddleware
 
+try:
+    from pypdf import PdfReader
+except ImportError:
+    try:
+        from PyPDF2 import PdfReader  # type: ignore
+    except ImportError:
+        PdfReader = None  # type: ignore
+
 
 load_dotenv()
 
@@ -56,6 +64,7 @@ CACHE_TTL_SEC = int(os.getenv("CACHE_TTL_SEC", "1800"))  # 30분
 CACHE_MAX_ITEMS = int(os.getenv("CACHE_MAX_ITEMS", "256"))
 
 TRANSCRIBE_MODEL = os.getenv("TRANSCRIBE_MODEL", "gpt-4o-mini-transcribe")
+OPENAI_SUMMARY_MODEL = os.getenv("OPENAI_SUMMARY_MODEL", "gpt-4o-mini")
 TRANSCRIBE_LANGUAGE = os.getenv("TRANSCRIBE_LANGUAGE", "ko")
 MP3_OUTPUT_DIR = Path(os.getenv("MP3_OUTPUT_DIR", "/tmp/ai_meeting_audio"))
 
@@ -152,6 +161,8 @@ class HealthOut(BaseModel):
     sum_model: str
     cls_model: str
     emb_model: str
+    openai_summary_model: str
+    pdf_support: bool
     cache: Dict[str, Any]
     concurrency: Dict[str, int]
 
@@ -213,21 +224,33 @@ class ReportIn(BaseModel):
     meeting_title: Optional[str] = "회의록"
     meeting_date_hint: Optional[str] = None
     include_summary: bool = True
+    report_format: str = Field("standard", pattern="^(standard|executive|action)$")
+    ai_provider: str = Field("local", pattern="^(local|openai)$")
     summary_max_length: int = Field(DEFAULT_MAX_LENGTH, ge=16, le=512)
     summary_min_length: int = Field(DEFAULT_MIN_LENGTH, ge=4, le=256)
 
 
 class ReportOut(BaseModel):
+    summary: Optional[str] = None
     markdown: str
     extracted: ExtractOut
 
 
 class TranscribeReportOut(BaseModel):
     transcript: str
+    summary: Optional[str] = None
     markdown: str
     extracted: ExtractOut
     mp3_download_url: str
     mp3_file_name: str
+    meta: Dict[str, Any]
+
+
+class PdfReportOut(BaseModel):
+    text: str
+    summary: Optional[str] = None
+    markdown: str
+    extracted: ExtractOut
     meta: Dict[str, Any]
 
 
@@ -321,6 +344,49 @@ def _transcribe_mp3(mp3_path: str, language: str) -> str:
     if isinstance(text, str):
         return text.strip()
     return str(text).strip()
+
+
+def _summarize_with_openai(text: str, max_length: int, min_length: int) -> str:
+    client = _get_openai_client()
+    prompt = (
+        "다음 회의 내용을 한국어로 간결하게 요약하세요. "
+        "중요 결정사항, 핵심 이슈, 후속 조치가 드러나야 합니다. "
+        f"분량은 대략 {min_length}자 이상 {max_length}자 이하로 맞추세요."
+    )
+    res = client.chat.completions.create(
+        model=OPENAI_SUMMARY_MODEL,
+        temperature=0.2,
+        messages=[
+            {"role": "system", "content": "당신은 한국어 회의록을 정리하는 실무 비서입니다."},
+            {"role": "user", "content": f"{prompt}\n\n[회의 내용]\n{text}"},
+        ],
+    )
+    return (res.choices[0].message.content or "").strip()
+
+
+def _extract_text_from_pdf(pdf_path: str) -> str:
+    if PdfReader is None:
+        raise HTTPException(
+            status_code=500,
+            detail="PDF support is not installed on server. Install pypdf or PyPDF2.",
+        )
+
+    try:
+        reader = PdfReader(pdf_path)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"PDF open failed: {exc}") from exc
+
+    pages: List[str] = []
+    for page in reader.pages:
+        try:
+            pages.append((page.extract_text() or "").strip())
+        except Exception:
+            continue
+
+    text = "\n\n".join(part for part in pages if part).strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="No readable text found in PDF.")
+    return text
 
 
 def _normalize_text(text: str, normalize_whitespace: bool, collapse_repeats: bool, max_repeat: int) -> str:
@@ -823,13 +889,105 @@ def _extract_structured_dialogue(text: str, meeting_date_hint: Optional[str]) ->
     )
 
 
-def _markdown_report(title: str, extracted: ExtractOut, summary: Optional[str]) -> str:
+def _markdown_report(
+    title: str,
+    extracted: ExtractOut,
+    summary: Optional[str],
+    *,
+    report_format: str = "standard",
+    source_label: Optional[str] = None,
+    attachments: Optional[List[str]] = None,
+) -> str:
     md = []
     md.append(f"# {title}")
     md.append("")
     md.append(f"- 날짜: {extracted.meeting_date or '-'}")
     md.append(f"- 참석자: {', '.join(extracted.attendees) if extracted.attendees else '-'}")
+    if source_label:
+        md.append(f"- 입력 소스: {source_label}")
+    if attachments:
+        md.append(f"- 첨부 자료: {', '.join(attachments)}")
     md.append("")
+
+    if report_format == "executive":
+        md.append("## 핵심 브리핑")
+        md.append("")
+        if summary:
+            md.append(summary.strip())
+        else:
+            md.append("- 이번 회의 핵심 요약은 생성되지 않았습니다.")
+        md.append("")
+
+        md.append("## 빠른 확인")
+        md.append("")
+        top_decision = extracted.decisions[:3]
+        top_issue = extracted.issues[:3]
+        top_action = extracted.action_items[:5]
+        md.append("### 결정")
+        if top_decision:
+            for item in top_decision:
+                md.append(f"- {item}")
+        else:
+            md.append("- (없음)")
+        md.append("")
+        md.append("### 리스크")
+        if top_issue:
+            for item in top_issue:
+                md.append(f"- {item}")
+        else:
+            md.append("- (없음)")
+        md.append("")
+        md.append("### 후속 조치")
+        if top_action:
+            for item in top_action:
+                due = item.due or item.due_text or "-"
+                owner = item.owner or "-"
+                md.append(f"- {item.task} / 담당: {owner} / 기한: {due}")
+        else:
+            md.append("- (없음)")
+        md.append("")
+        return "\n".join(md).strip() + "\n"
+
+    if report_format == "action":
+        md.append("## 실행 요약")
+        md.append("")
+        if summary:
+            md.append(summary.strip())
+        else:
+            md.append("- 후속 실행 중심 회의록입니다.")
+        md.append("")
+        md.append("## 액션아이템")
+        md.append("")
+        if extracted.action_items:
+            md.append("| 작업 | 담당 | 기한 |")
+            md.append("|---|---|---|")
+            for a in extracted.action_items:
+                owner = a.owner or "-"
+                due = a.due or (a.due_text or "-")
+                md.append(f"| {a.task} | {owner} | {due} |")
+        else:
+            md.append("- (없음)")
+        md.append("")
+        md.append("## 결정사항")
+        md.append("")
+        if extracted.decisions:
+            for d in extracted.decisions:
+                md.append(f"- {d}")
+        else:
+            md.append("- (없음)")
+        md.append("")
+        md.append("## 이슈 및 다음 안건")
+        md.append("")
+        if extracted.issues:
+            for it in extracted.issues:
+                md.append(f"- 이슈: {it}")
+        if extracted.next_agenda:
+            for it in extracted.next_agenda:
+                md.append(f"- 다음 안건: {it}")
+        if not extracted.issues and not extracted.next_agenda:
+            md.append("- (없음)")
+        md.append("")
+        return "\n".join(md).strip() + "\n"
 
     if summary:
         md.append("## 요약")
@@ -890,6 +1048,8 @@ def health():
         sum_model=SUM_MODEL_ID,
         cls_model=CLS_MODEL_ID,
         emb_model=EMB_MODEL_ID,
+        openai_summary_model=OPENAI_SUMMARY_MODEL,
+        pdf_support=PdfReader is not None,
         cache={"summarize": sum_cache.stats(), "embed": emb_cache.stats()},
         concurrency={"summarize": SUM_MAX_CONCURRENCY, "embed": EMB_MAX_CONCURRENCY, "classify": CLS_MAX_CONCURRENCY},
     )
@@ -970,12 +1130,26 @@ async def report(req: ReportIn):
 
     summary = None
     if req.include_summary:
-        sreq = SummarizeIn(text=raw, max_length=req.summary_max_length, min_length=req.summary_min_length)
-        payload = await _summarize_full(sreq)
-        summary = payload["final_summary"]
+        if req.ai_provider == "openai":
+            summary = await asyncio.to_thread(
+                _summarize_with_openai,
+                raw,
+                req.summary_max_length,
+                req.summary_min_length,
+            )
+        else:
+            sreq = SummarizeIn(text=raw, max_length=req.summary_max_length, min_length=req.summary_min_length)
+            payload = await _summarize_full(sreq)
+            summary = payload["final_summary"]
 
-    md = _markdown_report(req.meeting_title or "회의록", extracted, summary)
-    return ReportOut(markdown=md, extracted=extracted)
+    md = _markdown_report(
+        req.meeting_title or "회의록",
+        extracted,
+        summary,
+        report_format=req.report_format,
+        source_label="텍스트 입력",
+    )
+    return ReportOut(summary=summary, markdown=md, extracted=extracted)
 
 
 @app.get("/audio/{file_name}")
@@ -992,6 +1166,8 @@ async def transcribe_and_report(
     meeting_title: str = Form("회의록"),
     meeting_date_hint: str = Form(""),
     include_summary: str = Form("true"),
+    report_format: str = Form("standard"),
+    ai_provider: str = Form("local"),
     language: str = Form(TRANSCRIBE_LANGUAGE),
 ):
     ext = Path(audio.filename or "input").suffix or ".webm"
@@ -1021,23 +1197,88 @@ async def transcribe_and_report(
                 meeting_title=meeting_title or "회의록",
                 meeting_date_hint=meeting_date_hint or None,
                 include_summary=use_summary,
+                report_format=report_format,
+                ai_provider=ai_provider,
             )
         )
 
         return TranscribeReportOut(
             transcript=transcript,
+            summary=report_out.summary,
             markdown=report_out.markdown,
             extracted=report_out.extracted,
             mp3_download_url=f"/audio/{output_name}",
             mp3_file_name=output_name,
             meta={
                 "transcribe_model": TRANSCRIBE_MODEL,
+                "ai_provider": ai_provider,
+                "report_format": report_format,
                 "language": language or TRANSCRIBE_LANGUAGE,
             },
         )
     finally:
         try:
             os.remove(temp_input_path)
+        except OSError:
+            pass
+
+
+@app.post("/pdf-report", response_model=PdfReportOut)
+async def pdf_report(
+    pdf: UploadFile = File(...),
+    meeting_title: str = Form("회의록"),
+    meeting_date_hint: str = Form(""),
+    include_summary: str = Form("true"),
+    report_format: str = Form("standard"),
+    ai_provider: str = Form("local"),
+):
+    ext = Path(pdf.filename or "input.pdf").suffix.lower()
+    if ext != ".pdf":
+        raise HTTPException(status_code=400, detail="Only PDF files are supported.")
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_pdf:
+        temp_bytes = await pdf.read()
+        if not temp_bytes:
+            raise HTTPException(status_code=400, detail="pdf file is empty")
+        temp_pdf.write(temp_bytes)
+        temp_pdf_path = temp_pdf.name
+
+    try:
+        text = await asyncio.to_thread(_extract_text_from_pdf, temp_pdf_path)
+        use_summary = include_summary.strip().lower() in {"1", "true", "yes", "on"}
+        report_out = await report(
+            ReportIn(
+                text=text,
+                meeting_title=meeting_title or Path(pdf.filename or "회의자료").stem,
+                meeting_date_hint=meeting_date_hint or None,
+                include_summary=use_summary,
+                report_format=report_format,
+                ai_provider=ai_provider,
+            )
+        )
+        markdown = _markdown_report(
+            meeting_title or Path(pdf.filename or "회의자료").stem,
+            report_out.extracted,
+            report_out.summary,
+            report_format=report_format,
+            source_label="PDF 업로드",
+            attachments=[pdf.filename or "document.pdf"],
+        )
+        return PdfReportOut(
+            text=text,
+            summary=report_out.summary,
+            markdown=markdown,
+            extracted=report_out.extracted,
+            meta={
+                "file_name": pdf.filename or "document.pdf",
+                "ai_provider": ai_provider,
+                "report_format": report_format,
+                "pdf_support": PdfReader is not None,
+            },
+        )
+    finally:
+        try:
+            os.remove(temp_pdf_path)
         except OSError:
             pass
 

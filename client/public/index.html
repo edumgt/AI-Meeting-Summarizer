@@ -3,250 +3,784 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>회의 녹음/전사/정리</title>
+  <title>AI 회의록 워크스페이스</title>
   <style>
-    body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; color:#111827; background:#fff; }
-    header { padding:12px 16px; border-bottom:1px solid #e5e7eb; display:flex; gap:12px; align-items:center; flex-wrap:wrap; position:sticky; top:0; background:#fff; z-index:20; }
-    .btn { padding:10px 12px; border:1px solid #d1d5db; background:#fff; border-radius:10px; cursor:pointer; }
-    .btn.primary { background:#111827; color:#fff; border-color:#111827; }
-    .btn:disabled { opacity:.5; cursor:not-allowed; }
+    :root {
+      --bg: #f5f1e8;
+      --panel: #fffdf8;
+      --panel-strong: #fffaf0;
+      --ink: #1f2937;
+      --muted: #6b7280;
+      --line: #dfd6c4;
+      --brand: #8a4b2a;
+      --brand-strong: #5f311b;
+      --accent: #2f6f64;
+      --danger: #a03d2f;
+      --shadow: 0 20px 40px rgba(76, 55, 31, 0.08);
+    }
 
-    .wrap { display:grid; grid-template-columns: 1fr 1fr; min-height: calc(100vh - 56px); }
-    .pane { padding:12px; overflow:auto; }
-    .pane + .pane { border-left:1px solid #e5e7eb; }
-    textarea { width:100%; min-height: 220px; resize: vertical; padding:10px; border-radius:10px; border:1px solid #d1d5db; }
-    .card { border:1px solid #e5e7eb; border-radius:12px; padding:12px; margin-top:12px; background:#fff; }
-    .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
-    table { width:100%; border-collapse: collapse; }
-    th, td { border:1px solid #e5e7eb; padding:8px; vertical-align: top; }
-    th { background:#f9fafb; text-align:left; }
-    code, pre { background:#f3f4f6; padding:2px 6px; border-radius:6px; }
-    pre { padding:12px; overflow:auto; white-space: pre-wrap; }
-    .muted { color:#6b7280; font-size:12px; }
-    #recordTime { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 700; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(138, 75, 42, 0.10), transparent 28%),
+        radial-gradient(circle at top right, rgba(47, 111, 100, 0.11), transparent 24%),
+        linear-gradient(180deg, #fbf7ef 0%, var(--bg) 100%);
+      font-family: "Pretendard Variable", "Pretendard", "Noto Sans KR", sans-serif;
+    }
 
-    /* Offcanvas (GNB) */
-    .gnb-left { display:flex; align-items:center; gap:10px; min-width: 220px; }
-    .gnb-title { font-weight: 800; letter-spacing: -0.02em; }
-    .gnb-right { margin-left:auto; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    button, input, select, textarea {
+      font: inherit;
+    }
+
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 30;
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 18px;
+      backdrop-filter: blur(18px);
+      background: rgba(251, 247, 239, 0.86);
+      border-bottom: 1px solid rgba(138, 75, 42, 0.12);
+    }
+
+    .hero {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .hero-copy strong {
+      display: block;
+      font-size: 1.02rem;
+      letter-spacing: -0.03em;
+    }
+
+    .hero-copy span {
+      color: var(--muted);
+      font-size: 0.88rem;
+    }
+
+    .top-meta {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .pill {
+      padding: 8px 12px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(255,255,255,0.7);
+      color: var(--muted);
+      font-size: 0.84rem;
+    }
+
+    .iconbtn, .btn {
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--ink);
+      cursor: pointer;
+      transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease, background .16s ease;
+    }
+
+    .iconbtn:hover, .btn:hover {
+      transform: translateY(-1px);
+      box-shadow: var(--shadow);
+      border-color: rgba(138, 75, 42, 0.38);
+    }
 
     .iconbtn {
-      width:42px; height:42px;
-      display:inline-flex; align-items:center; justify-content:center;
-      border:1px solid #d1d5db; background:#fff; border-radius:12px;
-      cursor:pointer;
+      width: 46px;
+      height: 46px;
+      border-radius: 14px;
     }
-    .iconbtn:active { transform: translateY(1px); }
+
+    .btn {
+      padding: 11px 14px;
+      border-radius: 14px;
+    }
+
+    .btn.primary {
+      background: linear-gradient(135deg, var(--brand), var(--brand-strong));
+      border-color: transparent;
+      color: #fffdf9;
+    }
+
+    .btn.secondary {
+      background: linear-gradient(135deg, #3f7e73, var(--accent));
+      border-color: transparent;
+      color: #fff;
+    }
+
+    .btn.ghost {
+      background: transparent;
+    }
+
+    .btn:disabled {
+      cursor: not-allowed;
+      opacity: .55;
+      transform: none;
+      box-shadow: none;
+    }
+
+    .shell {
+      display: grid;
+      grid-template-columns: 1.08fr .92fr;
+      gap: 18px;
+      padding: 18px;
+    }
+
+    .column {
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      min-width: 0;
+    }
+
+    .card {
+      background: linear-gradient(180deg, rgba(255,253,248,0.96), rgba(255,250,240,0.92));
+      border: 1px solid rgba(138, 75, 42, 0.12);
+      border-radius: 24px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .card-head {
+      padding: 18px 20px 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .card-head h2,
+    .card-head h3,
+    .card-head h4 {
+      margin: 0;
+      letter-spacing: -0.03em;
+    }
+
+    .card-head p {
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    .card-body {
+      padding: 0 20px 20px;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      padding: 0 20px 20px;
+    }
+
+    .stat {
+      padding: 14px;
+      border-radius: 18px;
+      background: rgba(255,255,255,0.75);
+      border: 1px solid rgba(138, 75, 42, 0.10);
+    }
+
+    .stat strong {
+      display: block;
+      font-size: 1.05rem;
+    }
+
+    .stat span {
+      color: var(--muted);
+      font-size: 0.84rem;
+    }
+
+    .module-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .module-btn {
+      width: 100%;
+      min-height: 112px;
+      text-align: left;
+      padding: 16px;
+      border-radius: 20px;
+      border: 1px solid rgba(138, 75, 42, 0.14);
+      background: rgba(255,255,255,0.8);
+      cursor: pointer;
+    }
+
+    .module-btn strong {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 1rem;
+    }
+
+    .module-btn span {
+      display: block;
+      color: var(--muted);
+      line-height: 1.45;
+      font-size: 0.9rem;
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+
+    .field label,
+    .field .label {
+      font-size: 0.9rem;
+      font-weight: 700;
+    }
+
+    input[type="text"],
+    input[type="date"],
+    input[type="email"],
+    select,
+    textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: rgba(255,255,255,0.88);
+      padding: 12px 14px;
+      color: var(--ink);
+      outline: none;
+    }
+
+    textarea {
+      min-height: 220px;
+      resize: vertical;
+      line-height: 1.55;
+    }
+
+    .inline-options {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .choice {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      padding: 12px 14px;
+      border-radius: 18px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.75);
+      flex: 1 1 220px;
+    }
+
+    .choice small,
+    .muted {
+      color: var(--muted);
+    }
+
+    .row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .notice {
+      padding: 12px 14px;
+      border-radius: 16px;
+      border: 1px dashed rgba(138, 75, 42, 0.24);
+      background: rgba(255,255,255,0.55);
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .record-timer {
+      font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+      font-size: 1.25rem;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      color: var(--brand-strong);
+    }
+
+    .attachment-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .attachment-item {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      padding: 12px 14px;
+      border-radius: 16px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.74);
+    }
+
+    .preview {
+      min-height: 420px;
+      padding: 18px;
+      border-radius: 20px;
+      border: 1px solid rgba(138, 75, 42, 0.12);
+      background: rgba(255,255,255,0.82);
+      overflow: auto;
+    }
+
+    .preview :first-child {
+      margin-top: 0;
+    }
+
+    .json-box,
+    .transcript-box {
+      white-space: pre-wrap;
+      word-break: break-word;
+      padding: 16px;
+      border-radius: 18px;
+      background: rgba(255,255,255,0.82);
+      border: 1px solid rgba(138, 75, 42, 0.12);
+      min-height: 140px;
+    }
+
+    .section-anchor {
+      scroll-margin-top: 96px;
+    }
 
     .offcanvas-backdrop {
-      position: fixed; inset: 0;
-      background: rgba(17,24,39,.45);
-      opacity: 0; pointer-events: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(31, 41, 55, 0.42);
+      opacity: 0;
+      pointer-events: none;
       transition: opacity .2s ease;
       z-index: 40;
     }
 
     .offcanvas {
-      position: fixed; top: 0; left: 0; height: 100vh; width: min(86vw, 360px);
-      background: #fff;
-      border-right: 1px solid #e5e7eb;
+      position: fixed;
+      inset: 0 auto 0 0;
+      width: min(88vw, 390px);
+      display: flex;
+      flex-direction: column;
+      background: linear-gradient(180deg, #fffaf2, #f6eee0);
+      border-right: 1px solid rgba(138, 75, 42, 0.14);
       transform: translateX(-102%);
-      transition: transform .22s ease;
+      transition: transform .24s ease;
       z-index: 50;
-      display:flex; flex-direction:column;
+      box-shadow: var(--shadow);
     }
 
     .offcanvas.open { transform: translateX(0); }
-    .offcanvas-backdrop.open { opacity: 1; pointer-events: auto; }
-
-    .offcanvas-header {
-      padding: 14px 14px;
-      border-bottom: 1px solid #e5e7eb;
-      display:flex; align-items:center; justify-content:space-between; gap:10px;
+    .offcanvas-backdrop.open {
+      opacity: 1;
+      pointer-events: auto;
     }
-    .offcanvas-header .brand { display:flex; flex-direction:column; line-height:1.1; }
-    .offcanvas-header .brand strong { font-size: 14px; }
-    .offcanvas-header .brand span { font-size: 12px; color:#6b7280; }
 
-    .offcanvas-body { padding: 12px; display:flex; flex-direction:column; gap:10px; overflow:auto; }
-    .offcanvas-body .menu-title { font-size: 12px; color:#6b7280; margin-top:6px; }
-
-    .menu-btn { width:100%; text-align:left; display:flex; justify-content:space-between; align-items:center; gap:10px; }
+    .offcanvas-header,
+    .offcanvas-footer {
+      padding: 18px;
+      border-bottom: 1px solid rgba(138, 75, 42, 0.12);
+    }
 
     .offcanvas-footer {
-      margin-top:auto;
-      padding: 14px;
-      border-top: 1px solid #e5e7eb;
+      border-bottom: 0;
+      border-top: 1px solid rgba(138, 75, 42, 0.12);
+      margin-top: auto;
     }
-    .logo-box {
-      display:flex; align-items:center; justify-content:center;
-      height: 52px;
-      border: 1px dashed #d1d5db;
-      border-radius: 14px;
-      font-weight: 900;
-      letter-spacing: .14em;
-      color:#111827;
-      user-select:none;
-    }
-    .logo-hint { text-align:center; margin-top:8px; font-size: 12px; color:#6b7280; }
 
-    @media (max-width: 980px) {
-      .wrap { grid-template-columns: 1fr; }
-      .pane + .pane { border-left: none; border-top:1px solid #e5e7eb; }
+    .offcanvas-body {
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      overflow: auto;
+    }
+
+    .menu-title {
+      margin: 0 0 6px;
+      color: var(--muted);
+      font-size: 0.82rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .menu-btn {
+      width: 100%;
+      padding: 14px 16px;
+      border-radius: 18px;
+      border: 1px solid rgba(138, 75, 42, 0.12);
+      background: rgba(255,255,255,0.78);
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .menu-btn strong {
+      display: block;
+      margin-bottom: 6px;
+    }
+
+    .menu-btn span {
+      color: var(--muted);
+      font-size: 0.9rem;
+      line-height: 1.45;
+    }
+
+    .logo-box {
+      padding: 18px;
+      border-radius: 18px;
+      border: 1px dashed rgba(138, 75, 42, 0.28);
+      text-align: center;
+      font-weight: 900;
+      letter-spacing: 0.2em;
+      color: var(--brand);
+      background: rgba(255,255,255,0.58);
+    }
+
+    .danger {
+      color: var(--danger);
+    }
+
+    @media (max-width: 1100px) {
+      .shell { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 760px) {
+      header { align-items: flex-start; flex-direction: column; }
+      .top-meta { justify-content: flex-start; }
+      .module-grid, .form-grid, .stats { grid-template-columns: 1fr; }
+      .shell { padding: 14px; gap: 14px; }
+      .card-head, .card-body, .stats { padding-left: 16px; padding-right: 16px; }
     }
   </style>
 </head>
 <body>
   <div id="ocBackdrop" class="offcanvas-backdrop" aria-hidden="true"></div>
 
-  <aside id="offcanvas" class="offcanvas" aria-hidden="true" aria-label="GNB 메뉴">
+  <aside id="offcanvas" class="offcanvas" aria-hidden="true" aria-label="기능 메뉴">
     <div class="offcanvas-header">
-      <div class="brand">
-        <strong>회의 녹음/전사/정리</strong>
-        <span>EDUMGT 내부 도구</span>
+      <div>
+        <strong>AI 회의록 워크스페이스</strong>
+        <div class="muted">기능별 오프캔버스 메뉴</div>
       </div>
-      <button id="btnMenuClose" class="iconbtn" aria-label="메뉴 닫기" title="닫기">✕</button>
+      <button id="btnMenuClose" class="iconbtn" aria-label="메뉴 닫기">✕</button>
     </div>
 
     <div class="offcanvas-body">
-      <div class="menu-title">메뉴</div>
-
-      <!-- 기존 버튼 ID 유지: main.js 수정 없이 동작 -->
-      <button id="btnTranscribe" class="btn primary menu-btn">
-        <span>녹음/오디오로 보고서 생성</span>
-        <small class="muted">POST /transcribe-and-report</small>
+      <p class="menu-title">빠른 이동</p>
+      <button class="menu-btn" data-scroll-target="moduleHub">
+        <strong>기능 허브</strong>
+        <span>오디오, PDF, 포맷, 저장, 메일 기능을 큰 모듈 단위로 확인합니다.</span>
       </button>
-
-      <button id="btnReport" class="btn menu-btn">
-        <span>텍스트로 보고서 생성</span>
-        <small class="muted">POST /report</small>
+      <button class="menu-btn" data-scroll-target="aiConfig">
+        <strong>AI 설정</strong>
+        <span>OpenAI 사용 또는 Local AI 모듈 기반 정리 방식을 선택합니다.</span>
       </button>
-
-      <button id="btnClear" class="btn menu-btn">
-        <span>초기화</span>
-        <small class="muted">Reset UI</small>
+      <button class="menu-btn" data-scroll-target="audioModule">
+        <strong>오디오 회의록</strong>
+        <span>녹음 또는 오디오 업로드 후 전사와 회의록 생성을 실행합니다.</span>
       </button>
-
-      <div class="card" style="margin-top:10px;">
-        <div class="muted">API</div>
-        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:6px;">
-          <span class="muted">Base:</span>
-          <code id="apiBase">(loading)</code>
-        </div>
-        <div id="status" class="muted" style="margin-top:8px;"></div>
-      </div>
+      <button class="menu-btn" data-scroll-target="textModule">
+        <strong>텍스트 회의록</strong>
+        <span>붙여넣은 회의 내용으로 바로 회의록을 생성합니다.</span>
+      </button>
+      <button class="menu-btn" data-scroll-target="pdfModule">
+        <strong>PDF 업로드</strong>
+        <span>회의 자료 PDF를 올리고 회의록 정리로 연결합니다.</span>
+      </button>
+      <button class="menu-btn" data-scroll-target="exportModule">
+        <strong>저장 및 메일</strong>
+        <span>마크다운 저장, PDF 저장, 메일 전송 흐름을 한곳에 모읍니다.</span>
+      </button>
+      <button class="menu-btn" data-scroll-target="resultModule">
+        <strong>결과 보기</strong>
+        <span>정리 회의록, 전사문, 구조화 JSON을 확인합니다.</span>
+      </button>
     </div>
 
     <div class="offcanvas-footer">
-      <div class="logo-box" aria-label="EDUMGT 로고">EDUMGT</div>
-      <div class="logo-hint">© EDUMGT</div>
+      <div class="logo-box">EDUMGT</div>
     </div>
   </aside>
 
   <header>
-    <div class="gnb-left">
-      <button id="btnMenu" class="iconbtn" aria-label="메뉴 열기" title="메뉴">☰</button>
-      <div class="gnb-title">회의 녹음/전사/정리</div>
+    <div class="hero">
+      <button id="btnMenu" class="iconbtn" aria-label="메뉴 열기">☰</button>
+      <div class="hero-copy">
+        <strong>회의록 생성, PDF 정리, 저장, 메일 전송을 한 화면에서</strong>
+        <span>오프캔버스 메뉴로 큰 기능별 모듈을 빠르게 전환합니다.</span>
+      </div>
     </div>
 
-    <div class="gnb-right">
-      <span class="muted">API: <span id="apiBaseTop"></span></span>
-      <span id="statusTop" class="muted"></span>
+    <div class="top-meta">
+      <span class="pill">API <span id="apiBaseTop">(loading)</span></span>
+      <span class="pill">상태 <span id="statusTop">대기</span></span>
     </div>
   </header>
 
-  <div class="wrap">
-    <div class="pane">
-      <h3>1) 회의 음성 입력</h3>
-      <div class="card">
-        <div class="row">
-          <button id="btnStartRecording" class="btn">브라우저 녹음 시작</button>
-          <button id="btnStopRecording" class="btn" disabled>녹음 종료</button>
-          <button id="btnUploadAudio" class="btn">오디오 파일 선택</button>
-          <input id="audioFile" type="file" accept="audio/*" style="display:none;" />
+  <main class="shell">
+    <section class="column">
+      <article id="moduleHub" class="card section-anchor">
+        <div class="card-head">
+          <div>
+            <h2>기능 허브</h2>
+            <p>큰 기능별 버튼 양식으로 필요한 작업을 바로 시작할 수 있습니다.</p>
+          </div>
         </div>
-        <p class="muted">녹음 시간: <span id="recordTime">00:00</span></p>
-        <p id="recordInfo" class="muted">녹음 또는 파일 업로드 후 좌측 메뉴에서 "녹음/오디오로 보고서 생성"을 누르세요.</p>
-        <div id="audioDownload" class="muted"></div>
-      </div>
+        <div class="stats">
+          <div class="stat">
+            <strong id="summaryEngine">Local AI</strong>
+            <span>현재 회의록 정리 엔진</span>
+          </div>
+          <div class="stat">
+            <strong id="currentFormat">standard</strong>
+            <span>선택된 회의록 포맷</span>
+          </div>
+          <div class="stat">
+            <strong id="pdfSupportState">확인 중</strong>
+            <span>PDF 정리 지원 상태</span>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="module-grid">
+            <button class="module-btn" data-scroll-target="aiConfig">
+              <strong>AI 사용 설정</strong>
+              <span>OpenAI 요약 사용 또는 로컬 요약 모델 사용 방식을 선택합니다.</span>
+            </button>
+            <button class="module-btn" data-scroll-target="audioModule">
+              <strong>오디오 회의록 생성</strong>
+              <span>브라우저 녹음 또는 파일 업로드 후 회의록을 생성합니다.</span>
+            </button>
+            <button class="module-btn" data-scroll-target="textModule">
+              <strong>텍스트 회의록 정리</strong>
+              <span>수동 입력 텍스트로 빠르게 보고서를 만듭니다.</span>
+            </button>
+            <button class="module-btn" data-scroll-target="pdfModule">
+              <strong>PDF 업로드 및 정리</strong>
+              <span>회의 자료 PDF를 업로드하고 AI 회의록으로 변환합니다.</span>
+            </button>
+            <button class="module-btn" data-scroll-target="exportModule">
+              <strong>PDF 저장 및 마크다운 저장</strong>
+              <span>브라우저 저장 흐름으로 회의록을 문서로 보관합니다.</span>
+            </button>
+            <button class="module-btn" data-scroll-target="exportModule">
+              <strong>메일 전송</strong>
+              <span>생성된 회의록을 메일 본문으로 바로 넘길 수 있습니다.</span>
+            </button>
+          </div>
+        </div>
+      </article>
 
-      <h3>2) 전사 텍스트</h3>
-      <div id="transcriptText" class="card">(아직 없음)</div>
+      <article id="aiConfig" class="card section-anchor">
+        <div class="card-head">
+          <div>
+            <h3>AI 사용 및 회의록 포맷 설정</h3>
+            <p>AI 엔진과 회의록 양식을 선택하면 이후 생성 작업에 공통 적용됩니다.</p>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="field">
+            <div class="label">AI 엔진 선택</div>
+            <div class="inline-options">
+              <label class="choice">
+                <input type="radio" name="aiProvider" value="local" checked />
+                <div>
+                  <div><strong>Local AI</strong></div>
+                  <small>로컬 요약 모델로 텍스트 기반 회의록을 정리합니다.</small>
+                </div>
+              </label>
+              <label class="choice">
+                <input type="radio" name="aiProvider" value="openai" />
+                <div>
+                  <div><strong>OpenAI</strong></div>
+                  <small>OpenAI 요약 모델을 사용합니다. 오디오 전사는 계속 OpenAI 경로를 사용합니다.</small>
+                </div>
+              </label>
+            </div>
+          </div>
 
-      <h3>3) 수동 입력(선택)</h3>
-      <textarea id="inputText" placeholder="직접 회의록 텍스트를 붙여넣으면 텍스트 기반 보고서 생성이 가능합니다."></textarea>
+          <div class="form-grid">
+            <div class="field">
+              <label for="reportFormat">회의록 포맷</label>
+              <select id="reportFormat">
+                <option value="standard">standard - 기본 회의록</option>
+                <option value="executive">executive - 임원 보고형</option>
+                <option value="action">action - 실행 중심형</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="meetingTitle">회의 제목</label>
+              <input id="meetingTitle" type="text" value="주간 개발 회의" />
+            </div>
+          </div>
 
-      <div class="card">
-        <div class="muted">옵션</div>
-        <label>회의 제목 <input id="meetingTitle" value="주간 개발 회의" style="width: 60%;" /></label>
-        <br/><br/>
-        <label>기준일(없으면 추정) <input id="dateHint" value="2026-02-08" placeholder="YYYY-MM-DD" /></label>
-        <br/><br/>
-        <label><input id="includeSummary" type="checkbox" checked /> 요약 포함</label>
-      </div>
-    </div>
+          <div class="form-grid">
+            <div class="field">
+              <label for="dateHint">기준일</label>
+              <input id="dateHint" type="date" value="2026-02-08" />
+            </div>
+            <div class="field">
+              <label class="choice">
+                <input id="includeSummary" type="checkbox" checked />
+                <div>
+                  <div><strong>요약 섹션 포함</strong></div>
+                  <small>보고서 상단 요약 블록을 함께 생성합니다.</small>
+                </div>
+              </label>
+            </div>
+          </div>
 
-    <div class="pane">
-      <h3>정리 회의록</h3>
-      <div id="reportMd" class="card">(아직 없음)</div>
+          <div id="aiModeHint" class="notice">
+            Local AI 모드에서는 텍스트 정리와 PDF 정리를 로컬 요약 모델로 처리합니다.
+          </div>
+        </div>
+      </article>
 
-      <div class="card">
-        <h4>결정/이슈/다음안건(JSON)</h4>
-        <pre id="extractJson">{}</pre>
-      </div>
-    </div>
-  </div>
+      <article id="audioModule" class="card section-anchor">
+        <div class="card-head">
+          <div>
+            <h3>오디오 회의록 모듈</h3>
+            <p>녹음 또는 오디오 업로드로 전사와 회의록 생성을 함께 처리합니다.</p>
+          </div>
+          <div class="record-timer" id="recordTime">00:00</div>
+        </div>
+        <div class="card-body">
+          <div class="row">
+            <button id="btnStartRecording" class="btn">브라우저 녹음 시작</button>
+            <button id="btnStopRecording" class="btn" disabled>녹음 종료</button>
+            <button id="btnUploadAudio" class="btn">오디오 파일 선택</button>
+            <button id="btnTranscribe" class="btn primary">오디오로 회의록 생성</button>
+            <input id="audioFile" type="file" accept="audio/*" hidden />
+          </div>
+          <div id="recordInfo" class="notice" style="margin-top:12px;">
+            녹음 또는 파일 업로드 후 회의록 생성을 실행하세요.
+          </div>
+          <div id="audioDownload" class="attachment-list"></div>
+        </div>
+      </article>
 
-  <script>
-    (function () {
-      const oc = document.getElementById("offcanvas");
-      const bd = document.getElementById("ocBackdrop");
-      const openBtn = document.getElementById("btnMenu");
-      const closeBtn = document.getElementById("btnMenuClose");
+      <article id="textModule" class="card section-anchor">
+        <div class="card-head">
+          <div>
+            <h3>텍스트 회의록 모듈</h3>
+            <p>텍스트만 있으면 바로 정리 회의록을 생성할 수 있습니다.</p>
+          </div>
+          <button id="btnReport" class="btn secondary">텍스트로 회의록 생성</button>
+        </div>
+        <div class="card-body">
+          <textarea id="inputText" placeholder="회의 내용 또는 기존 회의록 텍스트를 붙여넣으세요."></textarea>
+        </div>
+      </article>
 
-      function open() {
-        oc.classList.add("open");
-        bd.classList.add("open");
-        oc.setAttribute("aria-hidden", "false");
-        bd.setAttribute("aria-hidden", "false");
-      }
-      function close() {
-        oc.classList.remove("open");
-        bd.classList.remove("open");
-        oc.setAttribute("aria-hidden", "true");
-        bd.setAttribute("aria-hidden", "true");
-      }
+      <article id="pdfModule" class="card section-anchor">
+        <div class="card-head">
+          <div>
+            <h3>PDF 업로드 및 정리 모듈</h3>
+            <p>회의 자료 PDF를 업로드해 회의록 정리로 연결합니다.</p>
+          </div>
+          <div class="row">
+            <button id="btnSelectPdf" class="btn">PDF 선택</button>
+            <button id="btnPdfReport" class="btn primary">PDF 회의록 생성</button>
+            <input id="pdfFile" type="file" accept="application/pdf" hidden />
+          </div>
+        </div>
+        <div class="card-body">
+          <div id="pdfInfo" class="notice">
+            PDF 업로드 대기 중입니다.
+          </div>
+          <div id="attachmentList" class="attachment-list"></div>
+        </div>
+      </article>
 
-      openBtn?.addEventListener("click", open);
-      closeBtn?.addEventListener("click", close);
-      bd?.addEventListener("click", close);
-      window.addEventListener("keydown", (e) => {
-        if (e.key === "Escape") close();
-      });
+      <article id="exportModule" class="card section-anchor">
+        <div class="card-head">
+          <div>
+            <h3>저장 및 메일 모듈</h3>
+            <p>생성된 회의록을 마크다운으로 저장하고, PDF로 보관하거나 메일로 전송할 수 있습니다.</p>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="row">
+            <button id="btnDownloadMd" class="btn">회의록 .md 저장</button>
+            <button id="btnSavePdf" class="btn">회의록 PDF 저장</button>
+            <button id="btnClear" class="btn ghost">초기화</button>
+          </div>
+          <div class="form-grid" style="margin-top:14px;">
+            <div class="field">
+              <label for="emailTo">메일 수신자</label>
+              <input id="emailTo" type="email" placeholder="team@example.com" />
+            </div>
+            <div class="field">
+              <label for="emailSubject">메일 제목</label>
+              <input id="emailSubject" type="text" value="[회의록] 주간 개발 회의" />
+            </div>
+          </div>
+          <button id="btnSendMail" class="btn secondary">메일 전송 열기</button>
+          <div class="notice" style="margin-top:12px;">
+            PDF 저장은 브라우저 인쇄 기능을 사용합니다. 메일 전송은 기본 메일 앱으로 본문을 전달합니다.
+          </div>
+        </div>
+      </article>
+    </section>
 
-      // 메뉴에서 클릭하면 닫기
-      ["btnTranscribe", "btnReport", "btnClear"].forEach((id) => {
-        const el = document.getElementById(id);
-        el?.addEventListener("click", () => setTimeout(close, 0));
-      });
+    <section class="column">
+      <article id="resultModule" class="card section-anchor">
+        <div class="card-head">
+          <div>
+            <h3>정리 회의록 결과</h3>
+            <p>선택한 AI 엔진과 포맷 기준으로 생성된 결과를 확인합니다.</p>
+          </div>
+          <span id="status" class="pill">대기</span>
+        </div>
+        <div class="card-body">
+          <div id="reportMeta" class="notice" style="margin-bottom:12px;">
+            아직 생성된 회의록이 없습니다.
+          </div>
+          <div id="reportMd" class="preview">(아직 없음)</div>
+        </div>
+      </article>
 
-      // 상단 헤더 표시 동기화(기존 main.js 그대로 사용)
-      const apiBase = document.getElementById("apiBase");
-      const status = document.getElementById("status");
-      const apiBaseTop = document.getElementById("apiBaseTop");
-      const statusTop = document.getElementById("statusTop");
+      <article class="card">
+        <div class="card-head">
+          <div>
+            <h4>전사 또는 추출 텍스트</h4>
+            <p>오디오 또는 PDF 처리 결과의 원문 텍스트를 확인합니다.</p>
+          </div>
+        </div>
+        <div class="card-body">
+          <div id="transcriptText" class="transcript-box">(아직 없음)</div>
+        </div>
+      </article>
 
-      const sync = () => {
-        if (apiBaseTop && apiBase) apiBaseTop.textContent = apiBase.textContent || "";
-        if (statusTop && status) statusTop.textContent = status.textContent || "";
-      };
-
-      const mo = new MutationObserver(sync);
-      if (apiBase) mo.observe(apiBase, { childList: true, subtree: true, characterData: true });
-      if (status) mo.observe(status, { childList: true, subtree: true, characterData: true });
-      sync();
-    })();
-  </script>
+      <article class="card">
+        <div class="card-head">
+          <div>
+            <h4>구조화 JSON</h4>
+            <p>결정사항, 액션아이템, 이슈, 다음 안건을 JSON으로 확인합니다.</p>
+          </div>
+        </div>
+        <div class="card-body">
+          <pre id="extractJson" class="json-box">{}</pre>
+        </div>
+      </article>
+    </section>
+  </main>
 
   <script src="/config.js"></script>
   <script type="module" src="/main.js"></script>
