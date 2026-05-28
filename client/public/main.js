@@ -20,14 +20,23 @@ function getAiProvider() {
   return document.querySelector('input[name="aiProvider"]:checked')?.value || "local";
 }
 
+function getOllamaModel() {
+  return $("ollamaModel").value || "";
+}
+
 function getReportSettings() {
-  return {
+  const provider = getAiProvider();
+  const settings = {
     meeting_title: $("meetingTitle").value.trim() || "회의록",
     meeting_date_hint: $("dateHint").value || "",
     include_summary: $("includeSummary").checked,
     report_format: $("reportFormat").value,
-    ai_provider: getAiProvider(),
+    ai_provider: provider,
   };
+  if (provider === "ollama") {
+    settings.ollama_model = getOllamaModel();
+  }
+  return settings;
 }
 
 function setStatus(message, tone = "normal") {
@@ -68,12 +77,18 @@ function updateRecorderUi() {
 function updateModeUi() {
   const provider = getAiProvider();
   const format = $("reportFormat").value;
-  $("summaryEngine").textContent = provider === "openai" ? "OpenAI" : "Local AI";
+
+  const engineLabels = { openai: "OpenAI", ollama: "Ollama", local: "Local AI" };
+  $("summaryEngine").textContent = engineLabels[provider] || "Local AI";
   $("currentFormat").textContent = format;
-  $("aiModeHint").textContent =
-    provider === "openai"
-      ? "OpenAI 모드에서는 OpenAI 요약 모델을 사용합니다. 오디오 전사는 기존처럼 OpenAI STT를 사용합니다."
-      : "Local AI 모드에서는 텍스트 정리와 PDF 정리를 로컬 요약 모델로 처리합니다.";
+
+  const hints = {
+    openai: "OpenAI 모드에서는 OpenAI 요약 모델을 사용합니다. 오디오 전사는 기존처럼 OpenAI STT를 사용합니다.",
+    ollama: "Ollama 모드에서는 로컬 Ollama 서버의 LLM 모델로 회의록을 요약합니다. 오디오 전사는 OpenAI STT를 사용합니다.",
+    local: "Local AI 모드에서는 텍스트 정리와 PDF 정리를 로컬 요약 모델로 처리합니다.",
+  };
+  $("aiModeHint").textContent = hints[provider] || hints.local;
+  $("ollamaModelField").style.display = provider === "ollama" ? "" : "none";
 }
 
 function escapeHtml(value) {
@@ -214,7 +229,8 @@ function renderReport(payload, extra = {}) {
   $("reportMd").innerHTML = marked.parse(payload.markdown || "");
   $("extractJson").textContent = JSON.stringify(payload.extracted || {}, null, 2);
   $("transcriptText").textContent = transcript;
-  $("reportMeta").textContent = `${sourceLabel} · ${provider === "openai" ? "OpenAI" : "Local AI"} · ${formatLabel} · ${summary}`;
+  const engineLabel = provider === "openai" ? "OpenAI" : provider === "ollama" ? `Ollama (${getOllamaModel() || "default"})` : "Local AI";
+  $("reportMeta").textContent = `${sourceLabel} · ${engineLabel} · ${formatLabel} · ${summary}`;
   $("emailSubject").value = `[회의록] ${title}`;
 }
 
@@ -267,6 +283,26 @@ async function fetchHealth() {
   } catch (error) {
     console.error(error);
     $("pdfSupportState").textContent = "확인 실패";
+  }
+}
+
+async function fetchOllamaModels() {
+  try {
+    const res = await fetch(`${API_BASE}/ollama/models`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const select = $("ollamaModel");
+    select.innerHTML = "";
+    data.models.forEach((name) => {
+      const opt = document.createElement("option");
+      opt.value = name;
+      opt.textContent = name;
+      if (name === data.default) opt.selected = true;
+      select.appendChild(opt);
+    });
+  } catch (error) {
+    console.error("Ollama 모델 목록 로드 실패:", error);
+    $("ollamaModel").innerHTML = '<option value="">Ollama 연결 실패</option>';
   }
 }
 
@@ -482,4 +518,5 @@ initOffcanvas();
 updateRecorderUi();
 updateModeUi();
 fetchHealth();
+fetchOllamaModels();
 clearAll();

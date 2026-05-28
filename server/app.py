@@ -68,6 +68,9 @@ OPENAI_SUMMARY_MODEL = os.getenv("OPENAI_SUMMARY_MODEL", "gpt-4o-mini")
 TRANSCRIBE_LANGUAGE = os.getenv("TRANSCRIBE_LANGUAGE", "ko")
 MP3_OUTPUT_DIR = Path(os.getenv("MP3_OUTPUT_DIR", "/tmp/ai_meeting_audio"))
 
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11435")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3.5:latest")
+
 # -----------------------------
 # App
 # -----------------------------
@@ -90,6 +93,7 @@ sum_tokenizer = None
 classifier = None
 embedder = None
 openai_client: Optional[OpenAI] = None
+ollama_client: Optional[OpenAI] = None
 
 sum_sem = asyncio.Semaphore(SUM_MAX_CONCURRENCY)
 emb_sem = asyncio.Semaphore(EMB_MAX_CONCURRENCY)
@@ -162,6 +166,8 @@ class HealthOut(BaseModel):
     cls_model: str
     emb_model: str
     openai_summary_model: str
+    ollama_base_url: str
+    ollama_default_model: str
     pdf_support: bool
     cache: Dict[str, Any]
     concurrency: Dict[str, int]
@@ -225,7 +231,8 @@ class ReportIn(BaseModel):
     meeting_date_hint: Optional[str] = None
     include_summary: bool = True
     report_format: str = Field("standard", pattern="^(standard|executive|action)$")
-    ai_provider: str = Field("local", pattern="^(local|openai)$")
+    ai_provider: str = Field("local", pattern="^(local|openai|ollama)$")
+    ollama_model: Optional[str] = None
     summary_max_length: int = Field(DEFAULT_MAX_LENGTH, ge=16, le=512)
     summary_min_length: int = Field(DEFAULT_MIN_LENGTH, ge=4, le=256)
 
@@ -344,6 +351,33 @@ def _transcribe_mp3(mp3_path: str, language: str) -> str:
     if isinstance(text, str):
         return text.strip()
     return str(text).strip()
+
+
+def _get_ollama_client() -> OpenAI:
+    global ollama_client
+    if ollama_client is not None:
+        return ollama_client
+    ollama_client = OpenAI(base_url=f"{OLLAMA_BASE_URL}/v1", api_key="ollama")
+    return ollama_client
+
+
+def _summarize_with_ollama(text: str, max_length: int, min_length: int, model: Optional[str] = None) -> str:
+    client = _get_ollama_client()
+    use_model = model or OLLAMA_MODEL
+    prompt = (
+        "다음 회의 내용을 한국어로 간결하게 요약하세요. "
+        "중요 결정사항, 핵심 이슈, 후속 조치가 드러나야 합니다. "
+        f"분량은 대략 {min_length}자 이상 {max_length}자 이하로 맞추세요."
+    )
+    res = client.chat.completions.create(
+        model=use_model,
+        temperature=0.2,
+        messages=[
+            {"role": "system", "content": "당신은 한국어 회의록을 정리하는 실무 비서입니다. 요청한 분량에 맞게 요약만 출력하세요."},
+            {"role": "user", "content": f"{prompt}\n\n[회의 내용]\n{text}"},
+        ],
+    )
+    return (res.choices[0].message.content or "").strip()
 
 
 def _summarize_with_openai(text: str, max_length: int, min_length: int) -> str:
@@ -1049,10 +1083,26 @@ def health():
         cls_model=CLS_MODEL_ID,
         emb_model=EMB_MODEL_ID,
         openai_summary_model=OPENAI_SUMMARY_MODEL,
+        ollama_base_url=OLLAMA_BASE_URL,
+        ollama_default_model=OLLAMA_MODEL,
         pdf_support=PdfReader is not None,
         cache={"summarize": sum_cache.stats(), "embed": emb_cache.stats()},
         concurrency={"summarize": SUM_MAX_CONCURRENCY, "embed": EMB_MAX_CONCURRENCY, "classify": CLS_MAX_CONCURRENCY},
     )
+
+
+@app.get("/ollama/models")
+def ollama_models():
+    import urllib.request
+    import urllib.error
+    try:
+        req = urllib.request.Request(f"{OLLAMA_BASE_URL}/api/tags")
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read().decode())
+        models = [m["name"] for m in data.get("models", [])]
+        return {"models": models, "default": OLLAMA_MODEL}
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Ollama 연결 실패: {exc}")
 
 
 @app.get("/summarize")
@@ -1136,6 +1186,14 @@ async def report(req: ReportIn):
                 raw,
                 req.summary_max_length,
                 req.summary_min_length,
+            )
+        elif req.ai_provider == "ollama":
+            summary = await asyncio.to_thread(
+                _summarize_with_ollama,
+                raw,
+                req.summary_max_length,
+                req.summary_min_length,
+                req.ollama_model,
             )
         else:
             sreq = SummarizeIn(text=raw, max_length=req.summary_max_length, min_length=req.summary_min_length)

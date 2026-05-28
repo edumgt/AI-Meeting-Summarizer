@@ -14,6 +14,9 @@ services:
       - SUM_MAX_CONCURRENCY=1
       - CACHE_TTL_SEC=1800
       - CACHE_MAX_ITEMS=256
+      # Ollama (host의 Ollama 컨테이너, 포트 11435)
+      - OLLAMA_BASE_URL=http://host.docker.internal:11435
+      - OLLAMA_MODEL=qwen3.5:latest
     volumes:
       - hf-cache:/cache
     restart: unless-stopped

@@ -612,7 +612,21 @@
                   <small>OpenAI 요약 모델을 사용합니다. 오디오 전사는 계속 OpenAI 경로를 사용합니다.</small>
                 </div>
               </label>
+              <label class="choice">
+                <input type="radio" name="aiProvider" value="ollama" />
+                <div>
+                  <div><strong>Ollama</strong></div>
+                  <small>로컬 Ollama 서버의 LLM 모델로 회의록을 정리합니다.</small>
+                </div>
+              </label>
             </div>
+          </div>
+
+          <div id="ollamaModelField" class="field" style="display:none;">
+            <label for="ollamaModel">Ollama 모델 선택</label>
+            <select id="ollamaModel">
+              <option value="">모델 목록 로딩 중...</option>
+            </select>
           </div>
 
           <div class="form-grid">
