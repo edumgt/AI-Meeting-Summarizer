@@ -16,13 +16,12 @@ from pathlib import Path
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
+from fastapi.staticfiles import StaticFiles
 from openai import OpenAI
 
 from transformers import pipeline, AutoTokenizer
 from sentence_transformers import SentenceTransformer
-
-from fastapi.middleware.cors import CORSMiddleware
 
 try:
     from pypdf import PdfReader
@@ -75,18 +74,6 @@ OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3.5:latest")
 # App
 # -----------------------------
 app = FastAPI(title="Korean Meeting Minutes Summarizer (CPU)", version="2.0.0")
-
-# ✅ CORS 허용 (FE → API 호출 가능)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 summarizer = None
 sum_tokenizer = None
@@ -1340,6 +1327,15 @@ async def pdf_report(
         except OSError:
             pass
 
+@app.get("/config.js")
+def config_js():
+    api = os.getenv("API_BASE", "")
+    return Response(
+        content=f"window.API_BASE={json.dumps(api)};",
+        media_type="application/javascript",
+    )
+
+
 @app.post("/classify")
 async def classify(req: ClassifyIn):
     async with cls_sem:
@@ -1367,3 +1363,8 @@ async def embed(req: EmbedIn):
                 dim = len(vec)
 
     return EmbedOut(dim=dim, vectors=vectors)
+
+
+_static_dir = Path(__file__).parent / "static"
+if _static_dir.exists():
+    app.mount("/", StaticFiles(directory=str(_static_dir), html=True), name="static")

@@ -11,6 +11,7 @@ COPY server/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
 COPY server /app
+COPY client/public /app/static
 
 EXPOSE 8000
 

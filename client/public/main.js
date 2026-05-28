@@ -1,6 +1,6 @@
 import { marked } from "https://cdn.jsdelivr.net/npm/marked@12.0.2/lib/marked.esm.js";
 
-const API_BASE = window.API_BASE || "http://localhost:8000";
+const API_BASE = window.API_BASE ?? "http://localhost:8000";
 const $ = (id) => document.getElementById(id);
 
 const state = {

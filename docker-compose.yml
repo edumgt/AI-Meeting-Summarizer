@@ -17,21 +17,10 @@ services:
       # Ollama (host의 Ollama 컨테이너, 포트 11435)
       - OLLAMA_BASE_URL=http://host.docker.internal:11435
       - OLLAMA_MODEL=qwen3.5:latest
+      # FE가 같은 서버에서 서빙되므로 빈 문자열(동일 오리진)
+      - API_BASE=
     volumes:
       - hf-cache:/cache
-    restart: unless-stopped
-
-  web:
-    build:
-      context: .
-      dockerfile: client/Dockerfile
-    ports:
-      - "3000:3000"
-    environment:
-      # 브라우저에서 접근 가능한 API 주소(호스트 포트로 호출)
-      - API_BASE=http://localhost:8000
-    depends_on:
-      - api
     restart: unless-stopped
 
 volumes:
