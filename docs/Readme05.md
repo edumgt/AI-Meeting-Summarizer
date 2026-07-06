@@ -1,30 +1,30 @@
-# Readme05 - 프론트엔드/클라이언트 스택(Node.js + 스크립트)
+# Readme05 - 프론트엔드/클라이언트 스택(정적 HTML/JS)
+
+> 과거에는 별도 Node.js 클라이언트(`client/server.js` 등)가 있었으나 제거되었습니다. 현재는 빌드 도구 없는 단일 정적 페이지가 FastAPI 서버에 의해 직접 서빙됩니다.
 
 ## 1. 클라이언트 역할
-이 프로젝트의 Node.js 계층은 전통적인 SPA 프론트엔드라기보다, API를 쉽게 검증하고 자동화하는 **실행 클라이언트 레이어**에 가깝습니다.
+`client/public`은 전통적인 SPA 프레임워크 없이 순수 HTML/CSS/JS로 작성된 단일 페이지 워크스페이스입니다.
 
-- 샘플 입력을 서버로 전송
-- 결과를 콘솔 또는 파일로 출력
-- 기능별(요약/분류/임베딩/리포트) 시나리오 분리
+- 오프캔버스 메뉴로 기능별(회의록/애널리스트 리포트/콜 QA) 모듈 전환
+- 텍스트 입력, 브라우저 녹음(`MediaRecorder`), 오디오/PDF 업로드를 한 화면에서 처리
+- 결과(markdown, 전사문, 구조화 JSON)를 같은 화면에서 바로 확인
 
 ## 2. 핵심 구성
-- `client/scripts/summarize_sample.js`
-- `client/scripts/classify_sample.js`
-- `client/scripts/embed_sample.js`
-- `client/scripts/report_to_md.js`
-- 공통 HTTP 유틸: `client/scripts/_http.js`
+- `client/public/index.html`: 레이아웃과 각 기능 카드(모듈) 마크업
+- `client/public/main.js`: DOM 이벤트 바인딩, `fetch` 기반 API 호출, 결과 렌더링
+- `marked`(CDN)로 서버가 반환한 markdown을 HTML로 렌더링
+- `/config.js`(서버 제공): 배포 환경의 `API_BASE`를 `window.API_BASE`로 주입
 
-## 3. CommonJS 기반 장점
-- 러닝커브가 낮고 빠르게 실행 가능
-- 단일 파일 스크립트 운영이 쉬움
-- CI/CD에서 작업 스텝으로 넣기 간단
+## 3. 서빙 방식
+- `server/Dockerfile`이 `client/public`을 `server/static`으로 복사
+- `app.py`가 `StaticFiles(directory="static", html=True)`를 `/`에 마운트해 같은 FastAPI 프로세스가 API와 정적 파일을 함께 제공
+- 별도 프론트엔드 컨테이너/포트가 없어 배포 단위가 단순함(이미지 1개, 포트 1개)
 
-## 4. 운영 활용 예시
-- 배포 후 API 회귀 테스트
-- 샘플 데이터 주기 실행으로 모델 변경 영향도 확인
-- 결과 Markdown 자동 생성 후 사내 위키 업로드
+## 4. 신규 기능 UI
+- **애널리스트 리포트** 모듈: 텍스트/PDF 입력 → 추천 추출 결과 표시, 종목코드로 컨센서스 조회
+- **상담 통화 QA** 모듈: 상담 녹음 업로드 → markdown QA 리포트 + 구조화 JSON(문의유형/리스크등급/컴플라이언스 플래그) 표시
 
 ## 5. 확장 방향
-- TypeScript로 전환해 타입 안정성 강화
-- CLI 옵션화(`--input`, `--output`, `--model`)로 재사용성 향상
-- React/Vue UI 연동 시 현재 스크립트를 서비스 레이어로 재사용
+- 정적 페이지가 커지면 컴포넌트 단위 분리(예: Vite + 바닐라 JS 모듈) 고려
+- 오디오 녹음 UI를 콜 QA 모듈에도 재사용(현재는 콜 QA가 파일 업로드만 지원)
+- 종목 자동완성 UI(현재 `tickers_kr.json` 정적 사전 기반)

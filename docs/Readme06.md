@@ -29,6 +29,26 @@
 - 출력: markdown 형태 리포트
 - 특징: 실무 전달용 산출물을 빠르게 생성
 
+### 2-5. `/analyst-report`, `/analyst-report/pdf`
+- 입력: 애널리스트 리포트 텍스트 또는 PDF + 증권사/발행일(선택)
+- 출력: 종목별 `AnalystRecommendation`(투자의견/목표주가/근거) 리스트
+- 특징: 정규식/키워드 기반 추출(회의록 결정사항 추출과 동일한 방식), 결과는 Postgres에 누적 저장
+
+### 2-6. `/analyst-consensus/{ticker}`
+- 입력: 종목코드(예: `005930`)
+- 출력: 리포트 건수, 의견 분포, 목표주가 평균/최소/최대, 최근 리포트 목록
+- 특징: `/analyst-report*`로 누적된 데이터를 집계
+
+### 2-7. `/call-summary`, `/call-summary/{call_id}`
+- 입력: 상담 녹음 파일 + 상담원/상담일(선택)
+- 출력: 전사문, 문의유형, 주문요청 여부, 컴플라이언스 플래그, 리스크 등급, markdown QA 리포트
+- 특징: 컴플라이언스 체크는 키워드 매칭 기반 참고용 휴리스틱(법적 요건 보증 아님). 실제 텔레포니/IVR 연동은 범위 밖
+
+### 2-8. `/market-overview`
+- 입력: 없음(쿼리 `refresh=true`로 캐시 무시 가능)
+- 출력: 원화 기준 주요국 환율(`fx`), 주요국 주가지수(`indices`), `updated_at`
+- 특징: 환율은 open.er-api.com(공식 무료 API), 지수는 Yahoo Finance 비공식 차트 엔드포인트 사용(키 불필요, 5분 TTL 캐시). 개별 항목 실패는 `error` 필드로만 표시되고 전체 응답은 유지됨. 세계 시간대는 서버가 아닌 프론트엔드(`Intl.DateTimeFormat`)에서 계산
+
 ## 3. API 문서화
 - FastAPI Swagger(`/docs`) 자동 제공
 - 개발/QA/기획자가 동일 문서를 참조 가능

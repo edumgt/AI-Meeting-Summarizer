@@ -512,6 +512,18 @@
         <strong>결과 보기</strong>
         <span>정리 회의록, 전사문, 구조화 JSON을 확인합니다.</span>
       </button>
+      <button class="menu-btn" data-scroll-target="analystModule">
+        <strong>애널리스트 리포트</strong>
+        <span>투자의견/목표주가를 추출하고 종목별 컨센서스를 조회합니다.</span>
+      </button>
+      <button class="menu-btn" data-scroll-target="callqaModule">
+        <strong>상담 통화 QA</strong>
+        <span>상담 녹음에서 문의유형/주문요청/컴플라이언스를 점검합니다.</span>
+      </button>
+      <button class="menu-btn" data-scroll-target="marketModule">
+        <strong>글로벌 마켓</strong>
+        <span>주요국 환율(원화 기준), 시간대, 주가지수를 한눈에 확인합니다.</span>
+      </button>
     </div>
 
     <div class="offcanvas-footer">
@@ -582,6 +594,18 @@
             <button class="module-btn" data-scroll-target="exportModule">
               <strong>메일 전송</strong>
               <span>생성된 회의록을 메일 본문으로 바로 넘길 수 있습니다.</span>
+            </button>
+            <button class="module-btn" data-scroll-target="analystModule">
+              <strong>애널리스트 리포트 추천 추출</strong>
+              <span>텍스트/PDF 리포트에서 투자의견·목표주가를 추출하고 컨센서스를 조회합니다.</span>
+            </button>
+            <button class="module-btn" data-scroll-target="callqaModule">
+              <strong>상담 통화 QA</strong>
+              <span>상담 녹음을 업로드해 문의유형/주문요청/컴플라이언스를 점검합니다.</span>
+            </button>
+            <button class="module-btn" data-scroll-target="marketModule">
+              <strong>글로벌 마켓</strong>
+              <span>주요국 환율/시간대/주가지수를 한 화면에서 확인합니다.</span>
             </button>
           </div>
         </div>
@@ -793,6 +817,165 @@
           <pre id="extractJson" class="json-box">{}</pre>
         </div>
       </article>
+    </section>
+
+    <section class="column" style="grid-column: 1 / -1;">
+      <div class="module-grid" style="align-items: start;">
+      <article id="analystModule" class="card section-anchor">
+        <div class="card-head">
+          <div>
+            <h3>애널리스트 리포트 추천 추출</h3>
+            <p>리포트 텍스트 또는 PDF에서 투자의견·목표주가·근거를 추출하고, 종목별 컨센서스를 조회합니다.</p>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="form-grid">
+            <div class="field">
+              <label for="analystFirm">증권사(선택)</label>
+              <input id="analystFirm" type="text" placeholder="예: 한국증권" />
+            </div>
+            <div class="field">
+              <label for="analystReportDate">리포트 발행일(선택)</label>
+              <input id="analystReportDate" type="date" />
+            </div>
+          </div>
+          <div class="field">
+            <label for="analystText">리포트 본문</label>
+            <textarea id="analystText" placeholder="애널리스트 리포트 텍스트를 붙여넣으세요. 예: '삼성전자 매수 의견 유지, 목표주가 90,000원으로 상향. 투자포인트: ...'"></textarea>
+          </div>
+          <div class="row">
+            <button id="btnAnalystText" class="btn secondary">텍스트로 추천 추출</button>
+            <button id="btnSelectAnalystPdf" class="btn">PDF 선택</button>
+            <button id="btnAnalystPdf" class="btn primary">PDF로 추천 추출</button>
+            <input id="analystPdfFile" type="file" accept="application/pdf" hidden />
+          </div>
+          <div id="analystPdfInfo" class="notice" style="margin-top:12px;">PDF 업로드 대기 중입니다.</div>
+          <div id="analystResult" class="json-box" style="margin-top:12px;">(아직 없음)</div>
+
+          <div class="form-grid" style="margin-top:14px;">
+            <div class="field">
+              <label for="consensusTicker">컨센서스 조회 (종목코드)</label>
+              <input id="consensusTicker" type="text" placeholder="예: 005930" />
+            </div>
+            <div class="field" style="justify-content:flex-end;">
+              <button id="btnConsensus" class="btn">컨센서스 조회</button>
+            </div>
+          </div>
+          <div id="consensusResult" class="json-box">(아직 없음)</div>
+        </div>
+      </article>
+
+      <article id="callqaModule" class="card section-anchor">
+        <div class="card-head">
+          <div>
+            <h3>상담 통화 QA (AICC)</h3>
+            <p>상담 녹음 업로드 → 전사 → 문의유형/주문요청/컴플라이언스 체크. 실제 착신·IVR·상담원 배분 기능은 포함하지 않습니다.</p>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="form-grid">
+            <div class="field">
+              <label for="callAgentName">상담원(선택)</label>
+              <input id="callAgentName" type="text" placeholder="예: 홍길동" />
+            </div>
+            <div class="field">
+              <label for="callDateHint">상담일(선택)</label>
+              <input id="callDateHint" type="date" />
+            </div>
+          </div>
+          <div class="form-grid">
+            <div class="field">
+              <label for="callAiProvider">요약 엔진</label>
+              <select id="callAiProvider">
+                <option value="openai">OpenAI</option>
+                <option value="ollama">Ollama</option>
+              </select>
+            </div>
+            <div class="field">
+              <label class="choice">
+                <input id="callIncludeSummary" type="checkbox" checked />
+                <div>
+                  <div><strong>상담 요약 포함</strong></div>
+                  <small>통화 내용 요약을 함께 생성합니다.</small>
+                </div>
+              </label>
+            </div>
+          </div>
+          <div class="row">
+            <button id="btnSelectCallAudio" class="btn">상담 녹음 파일 선택</button>
+            <button id="btnCallSummary" class="btn primary">통화 QA 생성</button>
+            <input id="callAudioFile" type="file" accept="audio/*" hidden />
+          </div>
+          <div id="callAudioInfo" class="notice" style="margin-top:12px;">상담 녹음 파일 업로드 대기 중입니다.</div>
+          <div id="callSummaryMd" class="preview" style="margin-top:12px; min-height: 160px;">(아직 없음)</div>
+          <div id="callExtractJson" class="json-box" style="margin-top:12px;">(아직 없음)</div>
+          <div class="notice" style="margin-top:12px;">
+            컴플라이언스 체크는 키워드 매칭 기반의 참고용 휴리스틱이며, 실제 금융소비자보호법 등 법적 요건을 담보하지 않습니다.
+          </div>
+        </div>
+      </article>
+
+      <article id="marketModule" class="card section-anchor">
+        <div class="card-head">
+          <div>
+            <h3>글로벌 마켓</h3>
+            <p>주요국 시간대(브라우저 기준 실시간), 원화 환율, 주가지수를 한 화면에서 확인합니다.</p>
+          </div>
+          <button id="btnRefreshMarket" class="btn">새로고침</button>
+        </div>
+        <div class="card-body">
+          <div class="field">
+            <div class="label">주요국 현재 시각</div>
+            <div style="overflow-x:auto;">
+              <table style="width:100%; border-collapse:collapse;" id="worldClockTable">
+                <thead>
+                  <tr><th style="text-align:left; padding:6px 8px;">국가</th><th style="text-align:left; padding:6px 8px;">현지 시각</th></tr>
+                </thead>
+                <tbody id="worldClockBody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="field" style="margin-top:16px;">
+            <div class="label">원화(KRW) 환율</div>
+            <div style="overflow-x:auto;">
+              <table style="width:100%; border-collapse:collapse;" id="fxTable">
+                <thead>
+                  <tr>
+                    <th style="text-align:left; padding:6px 8px;">국가</th>
+                    <th style="text-align:left; padding:6px 8px;">통화</th>
+                    <th style="text-align:right; padding:6px 8px;">환율(원)</th>
+                  </tr>
+                </thead>
+                <tbody id="fxBody"><tr><td colspan="3" class="muted" style="padding:6px 8px;">불러오는 중...</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="field" style="margin-top:16px;">
+            <div class="label">주요국 주가지수</div>
+            <div style="overflow-x:auto;">
+              <table style="width:100%; border-collapse:collapse;" id="indexTable">
+                <thead>
+                  <tr>
+                    <th style="text-align:left; padding:6px 8px;">국가</th>
+                    <th style="text-align:left; padding:6px 8px;">지수</th>
+                    <th style="text-align:right; padding:6px 8px;">현재가</th>
+                    <th style="text-align:right; padding:6px 8px;">등락률</th>
+                  </tr>
+                </thead>
+                <tbody id="indexBody"><tr><td colspan="4" class="muted" style="padding:6px 8px;">불러오는 중...</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div id="marketMeta" class="notice" style="margin-top:12px;">데이터 로딩 대기 중입니다.</div>
+          <div class="notice" style="margin-top:12px;">
+            환율/지수는 무료 공개 API(비공식 엔드포인트 포함)를 사용하며, 실시간 시세가 아닌 참고용입니다. 외부 API 장애 시 일부 항목이 비어 보일 수 있습니다.
+          </div>
+        </div>
+      </article>
+      </div>
     </section>
   </main>
 

@@ -8,6 +8,9 @@
 - `EMB_MODEL_ID`
 - `CHUNK_MAX_TOKENS`
 - `REDUCE_MAX_TOKENS`
+- `TRANSCRIBE_MODEL`, `OPENAI_SUMMARY_MODEL`, `TRANSCRIBE_LANGUAGE`, `MP3_OUTPUT_DIR`(오디오/STT 관련, `server/pipeline.py`)
+- `OLLAMA_BASE_URL`, `OLLAMA_MODEL`
+- `POSTGRES_HOST`(기본 `postgres`), `POSTGRES_PORT`(5432), `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_MAINTENANCE_DB`(기본 `postgres`), `POSTGRES_DB`(기본 `meeting_agent`) — 애널리스트/콜 QA 저장용, `server/db.py`
 
 ## 2. 장점
 - 배포 환경별 설정 분리 용이

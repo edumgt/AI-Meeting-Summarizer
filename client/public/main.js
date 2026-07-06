@@ -12,6 +12,8 @@ const state = {
   currentReport: null,
   selectedPdf: null,
   health: null,
+  selectedAnalystPdf: null,
+  selectedCallAudio: null,
 };
 
 $("apiBaseTop").textContent = API_BASE;
@@ -274,6 +276,120 @@ async function postPdfReport(pdfFile) {
   return res.json();
 }
 
+async function postAnalystReportPdf(pdfFile, analystFirm, reportDateHint) {
+  const fd = new FormData();
+  fd.append("pdf", pdfFile, pdfFile.name);
+  fd.append("analyst_firm", analystFirm || "");
+  fd.append("report_date_hint", reportDateHint || "");
+
+  const res = await fetch(`${API_BASE}/analyst-report/pdf`, { method: "POST", body: fd });
+  if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+  return res.json();
+}
+
+async function postCallSummary(audioFile, settings) {
+  const fd = new FormData();
+  fd.append("audio", audioFile, audioFile.name || "call.webm");
+  Object.entries(settings).forEach(([key, value]) => fd.append(key, String(value)));
+
+  const res = await fetch(`${API_BASE}/call-summary`, { method: "POST", body: fd });
+  if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+  return res.json();
+}
+
+function renderAnalystResult(payload) {
+  $("analystResult").textContent = JSON.stringify(payload.recommendations || [], null, 2);
+}
+
+const WORLD_TIMEZONES = [
+  { country: "한국", tz: "Asia/Seoul" },
+  { country: "미국(뉴욕)", tz: "America/New_York" },
+  { country: "일본", tz: "Asia/Tokyo" },
+  { country: "중국", tz: "Asia/Shanghai" },
+  { country: "유럽(독일)", tz: "Europe/Berlin" },
+  { country: "영국", tz: "Europe/London" },
+  { country: "홍콩", tz: "Asia/Hong_Kong" },
+];
+
+function renderWorldClock() {
+  const now = new Date();
+  $("worldClockBody").innerHTML = WORLD_TIMEZONES.map(({ country, tz }) => {
+    let timeText = "-";
+    try {
+      timeText = new Intl.DateTimeFormat("ko-KR", {
+        timeZone: tz,
+        hour12: false,
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      }).format(now);
+    } catch (error) {
+      console.error(`시간대 변환 실패: ${tz}`, error);
+    }
+    return `<tr><td style="padding:6px 8px;">${escapeHtml(country)}</td><td style="padding:6px 8px;">${escapeHtml(timeText)}</td></tr>`;
+  }).join("");
+}
+
+function startWorldClock() {
+  renderWorldClock();
+  setInterval(renderWorldClock, 1000);
+}
+
+function renderFxTable(fx, fxError) {
+  if (fxError) {
+    $("fxBody").innerHTML = `<tr><td colspan="3" class="danger" style="padding:6px 8px;">환율 조회 실패: ${escapeHtml(fxError)}</td></tr>`;
+    return;
+  }
+  if (!fx || !fx.length) {
+    $("fxBody").innerHTML = `<tr><td colspan="3" class="muted" style="padding:6px 8px;">데이터 없음</td></tr>`;
+    return;
+  }
+  $("fxBody").innerHTML = fx.map((row) => {
+    if (row.error) {
+      return `<tr><td style="padding:6px 8px;">${escapeHtml(row.country)}</td><td style="padding:6px 8px;">${escapeHtml(row.currency)}</td><td class="danger" style="text-align:right; padding:6px 8px;">조회 실패</td></tr>`;
+    }
+    return `<tr><td style="padding:6px 8px;">${escapeHtml(row.country)}</td><td style="padding:6px 8px;">${escapeHtml(row.unit_label || row.currency)}</td><td style="text-align:right; padding:6px 8px;">${Number(row.krw_per_unit).toLocaleString("ko-KR")}원</td></tr>`;
+  }).join("");
+}
+
+function renderIndexTable(indices) {
+  if (!indices || !indices.length) {
+    $("indexBody").innerHTML = `<tr><td colspan="4" class="muted" style="padding:6px 8px;">데이터 없음</td></tr>`;
+    return;
+  }
+  $("indexBody").innerHTML = indices.map((row) => {
+    if (row.error) {
+      return `<tr><td style="padding:6px 8px;">${escapeHtml(row.country)}</td><td style="padding:6px 8px;">${escapeHtml(row.index_label)}</td><td colspan="2" class="danger" style="text-align:right; padding:6px 8px;">조회 실패</td></tr>`;
+    }
+    const changeClass = row.change_pct > 0 ? "" : row.change_pct < 0 ? "danger" : "";
+    const changeSign = row.change_pct > 0 ? "+" : "";
+    return `<tr>
+      <td style="padding:6px 8px;">${escapeHtml(row.country)}</td>
+      <td style="padding:6px 8px;">${escapeHtml(row.index_label)}</td>
+      <td style="text-align:right; padding:6px 8px;">${Number(row.price).toLocaleString("ko-KR")}</td>
+      <td class="${changeClass}" style="text-align:right; padding:6px 8px;">${changeSign}${row.change_pct}%</td>
+    </tr>`;
+  }).join("");
+}
+
+async function fetchMarketOverview(forceRefresh = false) {
+  $("marketMeta").textContent = "글로벌 마켓 데이터를 불러오는 중...";
+  try {
+    const url = `${API_BASE}/market-overview${forceRefresh ? "?refresh=true" : ""}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+    const payload = await res.json();
+    renderFxTable(payload.fx, payload.fx_error);
+    renderIndexTable(payload.indices);
+    $("marketMeta").textContent = `업데이트 시각(UTC): ${payload.updated_at}`;
+  } catch (error) {
+    console.error(error);
+    $("marketMeta").textContent = `글로벌 마켓 데이터 로딩 실패: ${String(error)}`;
+  }
+}
+
 async function fetchHealth() {
   try {
     const res = await fetch(`${API_BASE}/health`);
@@ -514,9 +630,132 @@ document.querySelectorAll('input[name="aiProvider"]').forEach((input) => {
 });
 $("reportFormat").addEventListener("change", updateModeUi);
 
+$("btnAnalystText").addEventListener("click", async () => {
+  const text = $("analystText").value.trim();
+  if (!text) {
+    alert("리포트 텍스트를 입력하세요.");
+    return;
+  }
+  $("btnAnalystText").disabled = true;
+  setStatus("애널리스트 리포트 추출 중...");
+  try {
+    const payload = await postJson(`${API_BASE}/analyst-report`, {
+      text,
+      analyst_firm: $("analystFirm").value.trim() || null,
+      report_date_hint: $("analystReportDate").value || null,
+    });
+    renderAnalystResult(payload);
+    setStatus("애널리스트 리포트 추출 완료");
+  } catch (error) {
+    console.error(error);
+    alert(String(error));
+    setStatus("애널리스트 리포트 추출 실패", "error");
+  } finally {
+    $("btnAnalystText").disabled = false;
+  }
+});
+
+$("btnSelectAnalystPdf").addEventListener("click", () => $("analystPdfFile").click());
+
+$("analystPdfFile").addEventListener("change", () => {
+  const file = $("analystPdfFile").files?.[0];
+  if (!file) return;
+  state.selectedAnalystPdf = file;
+  $("analystPdfInfo").textContent = `PDF 선택됨: ${file.name} (${Math.round(file.size / 1024)}KB)`;
+});
+
+$("btnAnalystPdf").addEventListener("click", async () => {
+  if (!state.selectedAnalystPdf) {
+    alert("먼저 PDF 파일을 선택하세요.");
+    return;
+  }
+  $("btnAnalystPdf").disabled = true;
+  setStatus("애널리스트 PDF 추출 중...");
+  try {
+    const payload = await postAnalystReportPdf(
+      state.selectedAnalystPdf,
+      $("analystFirm").value.trim(),
+      $("analystReportDate").value
+    );
+    renderAnalystResult(payload);
+    $("analystPdfInfo").textContent = `PDF 추출 완료: ${state.selectedAnalystPdf.name}`;
+    setStatus("애널리스트 PDF 추출 완료");
+  } catch (error) {
+    console.error(error);
+    alert(String(error));
+    setStatus("애널리스트 PDF 추출 실패", "error");
+  } finally {
+    $("btnAnalystPdf").disabled = false;
+  }
+});
+
+$("btnConsensus").addEventListener("click", async () => {
+  const ticker = $("consensusTicker").value.trim();
+  if (!ticker) {
+    alert("종목코드를 입력하세요. 예: 005930");
+    return;
+  }
+  $("btnConsensus").disabled = true;
+  setStatus("컨센서스 조회 중...");
+  try {
+    const res = await fetch(`${API_BASE}/analyst-consensus/${encodeURIComponent(ticker)}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+    const payload = await res.json();
+    $("consensusResult").textContent = JSON.stringify(payload, null, 2);
+    setStatus("컨센서스 조회 완료");
+  } catch (error) {
+    console.error(error);
+    $("consensusResult").textContent = String(error);
+    setStatus("컨센서스 조회 실패", "error");
+  } finally {
+    $("btnConsensus").disabled = false;
+  }
+});
+
+$("btnSelectCallAudio").addEventListener("click", () => $("callAudioFile").click());
+
+$("callAudioFile").addEventListener("change", () => {
+  const file = $("callAudioFile").files?.[0];
+  if (!file) return;
+  state.selectedCallAudio = file;
+  $("callAudioInfo").textContent = `녹음 파일 선택됨: ${file.name} (${Math.round(file.size / 1024)}KB)`;
+});
+
+$("btnCallSummary").addEventListener("click", async () => {
+  if (!state.selectedCallAudio) {
+    alert("먼저 상담 녹음 파일을 선택하세요.");
+    return;
+  }
+  $("btnCallSummary").disabled = true;
+  setStatus("상담 통화 QA 생성 중...");
+  try {
+    const settings = {
+      agent_name: $("callAgentName").value.trim(),
+      call_date_hint: $("callDateHint").value || "",
+      include_summary: $("callIncludeSummary").checked,
+      ai_provider: $("callAiProvider").value,
+    };
+    const payload = await postCallSummary(state.selectedCallAudio, settings);
+    $("callSummaryMd").innerHTML = marked.parse(payload.markdown || "");
+    $("callExtractJson").textContent = JSON.stringify(payload.extracted || {}, null, 2);
+    $("callAudioInfo").textContent = `QA 생성 완료: ${state.selectedCallAudio.name}`;
+    setStatus("상담 통화 QA 완료");
+  } catch (error) {
+    console.error(error);
+    alert(String(error));
+    setStatus("상담 통화 QA 실패", "error");
+  } finally {
+    $("btnCallSummary").disabled = false;
+  }
+});
+
+$("btnRefreshMarket").addEventListener("click", () => fetchMarketOverview(true));
+
 initOffcanvas();
 updateRecorderUi();
 updateModeUi();
 fetchHealth();
 fetchOllamaModels();
 clearAll();
+startWorldClock();
+fetchMarketOverview();

@@ -11,11 +11,28 @@ FastAPI는 Python 기반 고성능 웹 프레임워크로, AI 추론 API 서버�
 ## 2. 서버 핵심 구성요소
 
 ### 2-1. 엔드포인트
+
+**회의록**
 - `GET /health`: 서버 상태 확인
 - `POST /summarize`: 긴 회의록 요약(Map-Reduce)
 - `POST /classify`: 문장/문서 분류
 - `POST /embed`: 텍스트 임베딩 벡터 생성
-- `POST /report`: 요약 + 액션아이템 형태의 종합 리포트 생성
+- `POST /extract` / `POST /report`: 결정사항/액션아이템 추출 및 종합 리포트 생성
+- `POST /transcribe-and-report`: 오디오 업로드 → STT 전사 → 회의록 리포트
+- `POST /pdf-report`: PDF 업로드 → 텍스트 추출 → 회의록 리포트
+- `GET /audio/{file_name}`: 저장된 mp3 다운로드
+
+**애널리스트 리포트** (`server/analyst.py`)
+- `POST /analyst-report`: 텍스트에서 투자의견/목표주가/근거 추출
+- `POST /analyst-report/pdf`: PDF 리포트 업로드 버전
+- `GET /analyst-consensus/{ticker}`: 종목별 컨센서스(의견 분포, 목표주가 평균/최소/최대) 조회
+
+**콜센터 QA** (`server/callcenter.py`)
+- `POST /call-summary`: 상담 녹음 업로드 → 전사 → 문의유형/주문요청/컴플라이언스 체크
+- `GET /call-summary/{call_id}`: 저장된 콜 QA 리포트 단건 조회
+
+**글로벌 마켓** (`server/market.py`, `server/market_data.py`)
+- `GET /market-overview`: 원화 기준 주요국 환율 + 주요국 주가지수(무료 공개 API, 5분 TTL 캐시, 키 불필요)
 
 ### 2-2. 요청/응답 스키마
 - Pydantic 모델로 필수/선택 필드 검증
@@ -24,8 +41,9 @@ FastAPI는 Python 기반 고성능 웹 프레임워크로, AI 추론 API 서버�
 
 ## 3. Python 런타임 및 패키지
 - Python 3.10+ 권장
-- 주요 패키지: `fastapi`, `uvicorn`, `transformers`, `torch`, `sentence-transformers`
+- 주요 패키지: `fastapi`, `uvicorn`, `transformers`, `torch`, `sentence-transformers`, `openai`, `pypdf`, `psycopg2-binary`
 - 설치는 `server/requirements.txt` 중심으로 관리
+- 모듈 구성: `app.py`(라우팅/회의록 도메인), `pipeline.py`(STT/요약/PDF 공용 헬퍼), `db.py`(Postgres), `analyst.py`/`callcenter.py`(신규 도메인 라우터), `tickers.py`(종목명 매핑)
 
 ## 4. 운영 관점 체크포인트
 - 서버 시작: `uvicorn app:app --host 127.0.0.1 --port 8000`

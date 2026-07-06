@@ -9,3 +9,9 @@ node_modules/
 # OS
 .DS_Store
 .key
+
+# Env
+.env
+
+.claude/
+.codex

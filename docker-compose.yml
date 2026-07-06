@@ -19,9 +19,23 @@ services:
       - OLLAMA_MODEL=qwen3.5:latest
       # FE가 같은 서버에서 서빙되므로 빈 문자열(동일 오리진)
       - API_BASE=
+      # 애널리스트 컨센서스 / 콜 QA 이력 저장용 Postgres (기존에 shared-net에 떠 있는 postgres 컨테이너 재사용)
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-password}
+      - POSTGRES_DB=meeting_agent
     volumes:
       - hf-cache:/cache
+    networks:
+      - default
+      - shared-net
     restart: unless-stopped
 
 volumes:
   hf-cache:
+
+networks:
+  default: {}
+  shared-net:
+    external: true
